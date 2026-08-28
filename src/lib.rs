@@ -3,6 +3,12 @@
 
 /// The public wire protocol shared with parent harnesses.
 pub mod protocol;
+/// Deterministic task projection and state transitions.
+pub mod reducer;
+/// End-to-end bounded task execution.
+pub mod runner;
+/// Isolated Git worktree preparation and artifact capture.
+pub mod workspace;
 
 /// Command-line parsing and dispatch.
 pub mod cli;
@@ -10,3 +16,5 @@ pub mod cli;
 pub mod codex;
 /// Typed failures returned by Spewer operations.
 pub mod error;
+
+mod util;

@@ -71,6 +71,12 @@ impl From<rusqlite::Error> for Error {
     }
 }
 
+impl From<crate::protocol::ProtocolError> for Error {
+    fn from(error: crate::protocol::ProtocolError) -> Self {
+        Self::new(ErrorKind::InvalidInput, error.to_string())
+    }
+}
+
 impl From<tokio::task::JoinError> for Error {
     fn from(error: tokio::task::JoinError) -> Self {
         Self::new(ErrorKind::Join, error.to_string())

@@ -372,7 +372,7 @@ pub enum ReceiptStatus {
 }
 
 /// One immutable artifact produced by the task.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Artifact {
     /// Artifact media or semantic kind.
     pub kind: String,
