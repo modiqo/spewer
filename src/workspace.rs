@@ -2,7 +2,7 @@
 
 use crate::error::{Error, ErrorKind, Result};
 use crate::protocol::{Artifact, TaskRequest};
-use crate::util::sha256;
+use crate::util::{data_root, sha256};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
@@ -116,15 +116,6 @@ impl Workspace {
             changed_paths,
         })
     }
-}
-
-fn data_root() -> Result<PathBuf> {
-    if let Some(root) = std::env::var_os("SPEWER_HOME") {
-        return Ok(PathBuf::from(root));
-    }
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "HOME or SPEWER_HOME is required"))?;
-    Ok(PathBuf::from(home).join(".local/share/spewer"))
 }
 
 fn reject_broad_root(path: &Path) -> Result<()> {

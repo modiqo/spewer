@@ -2,11 +2,10 @@
 
 use crate::codex::{CodexClient, CodexConfig, CodexMessage, NormalizedEvent, Normalizer};
 use crate::error::{Error, ErrorKind, Result};
-use crate::protocol::{
-    Event, PROTOCOL_VERSION, Receipt, ReceiptEngine, ReceiptStatus, TaskHandle, TaskRequest, Usage,
-    Verification,
-};
+use crate::protocol::{Event, PROTOCOL_VERSION, Receipt, TaskHandle, TaskRequest};
+use crate::receipt::build_receipt;
 use crate::reducer::{Projection, apply};
+use crate::store::{Database, EventInput};
 use crate::util::{new_id, now};
 use crate::workspace::{Workspace, WorkspaceEvidence};
 use serde::{Deserialize, Serialize};
@@ -29,19 +28,39 @@ pub struct RunResult {
     pub workspace: Workspace,
 }
 
-struct MemoryTask {
+struct TaskJournal<'a> {
     projection: Projection,
     events: Vec<Event>,
+    database: Option<&'a Database>,
 }
 
-impl MemoryTask {
-    fn append(
+impl TaskJournal<'_> {
+    async fn append(
         &mut self,
         kind: &str,
         data: Value,
         source: Option<crate::protocol::EventSource>,
+        source_key: Option<String>,
         observed_at: String,
     ) -> Result<Event> {
+        if let Some(database) = self.database {
+            let outcome = database
+                .append(EventInput {
+                    task_id: self.projection.task_id.clone(),
+                    attempt: self.projection.attempt,
+                    kind: kind.to_owned(),
+                    data,
+                    source,
+                    source_key,
+                    observed_at,
+                })
+                .await?;
+            self.projection = outcome.projection;
+            if outcome.inserted {
+                self.events.push(outcome.event.clone());
+            }
+            return Ok(outcome.event);
+        }
         let seq = self
             .projection
             .event_seq
@@ -62,18 +81,37 @@ impl MemoryTask {
         Ok(event)
     }
 
-    fn append_normalized(&mut self, event: NormalizedEvent) -> Result<Event> {
+    async fn append_normalized(&mut self, event: NormalizedEvent) -> Result<Event> {
         self.append(
             &event.kind,
             event.data,
             Some(event.source),
+            Some(event.source_key),
             event.observed_at,
         )
+        .await
     }
 }
 
 /// Runs one task through Codex App Server and returns a typed receipt.
 pub async fn run_codex(request: TaskRequest, config: CodexConfig) -> Result<RunResult> {
+    run_codex_inner(request, config, None).await
+}
+
+/// Runs one task while committing every accepted event to `SQLite`.
+pub async fn run_codex_durable(
+    request: TaskRequest,
+    config: CodexConfig,
+    database: &Database,
+) -> Result<RunResult> {
+    run_codex_inner(request, config, Some(database)).await
+}
+
+async fn run_codex_inner(
+    request: TaskRequest,
+    config: CodexConfig,
+    database: Option<&Database>,
+) -> Result<RunResult> {
     request.validate()?;
     if request.engine.kind != "codex-app-server" {
         return Err(Error::new(
@@ -81,9 +119,9 @@ pub async fn run_codex(request: TaskRequest, config: CodexConfig) -> Result<RunR
             "run_codex requires codex-app-server",
         ));
     }
-    let (task_id, handle, mut task) = accept_task(&request)?;
+    let (task_id, handle, mut task) = accept_task(&request, database).await?;
     let workspace = Workspace::prepare(&request, &task_id).await?;
-    record_workspace(&mut task, &workspace)?;
+    record_workspace(&mut task, &workspace).await?;
     let started = Instant::now();
     let deadline = started
         .checked_add(Duration::from_secs(request.budgets.wall_seconds))
@@ -113,22 +151,51 @@ pub async fn run_codex(request: TaskRequest, config: CodexConfig) -> Result<RunR
     finish(task, handle, workspace, &request, evidence, started)
 }
 
-fn accept_task(request: &TaskRequest) -> Result<(String, TaskHandle, MemoryTask)> {
+async fn accept_task<'a>(
+    request: &TaskRequest,
+    database: Option<&'a Database>,
+) -> Result<(String, TaskHandle, TaskJournal<'a>)> {
     let task_id = match &request.task_id {
         Some(task_id) => task_id.clone(),
         None => new_id("tsk")?,
     };
     let created_at = now()?;
-    let mut task = MemoryTask {
+    if let Some(database) = database {
+        let accepted = database
+            .accept(request.clone(), task_id.clone(), created_at)
+            .await?;
+        if !accepted.created {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "idempotency key already belongs to task {}; use status instead",
+                    accepted.handle.task_id
+                ),
+            ));
+        }
+        let event = accepted.event.ok_or_else(|| {
+            Error::new(ErrorKind::Storage, "created task has no acceptance event")
+        })?;
+        let journal = TaskJournal {
+            projection: accepted.projection,
+            events: vec![event],
+            database: Some(database),
+        };
+        return Ok((task_id, accepted.handle, journal));
+    }
+    let mut task = TaskJournal {
         projection: Projection::initial(task_id.clone(), request, created_at.clone()),
         events: Vec::new(),
+        database: None,
     };
     task.append(
         "task.accepted",
         json!({"idempotency_key": request.idempotency_key}),
         None,
+        None,
         created_at.clone(),
-    )?;
+    )
+    .await?;
     let handle = TaskHandle {
         protocol_version: PROTOCOL_VERSION.to_owned(),
         task_id: task_id.clone(),
@@ -139,14 +206,17 @@ fn accept_task(request: &TaskRequest) -> Result<(String, TaskHandle, MemoryTask)
     Ok((task_id, handle, task))
 }
 
-fn record_workspace(task: &mut MemoryTask, workspace: &Workspace) -> Result<()> {
+async fn record_workspace(task: &mut TaskJournal<'_>, workspace: &Workspace) -> Result<()> {
     task.append(
         "workspace.prepared",
         json!({"path": workspace.path, "base_revision": workspace.base_revision}),
         None,
+        None,
         now()?,
-    )?;
-    task.append("engine.starting", json!({}), None, now()?)?;
+    )
+    .await?;
+    task.append("engine.starting", json!({}), None, None, now()?)
+        .await?;
     Ok(())
 }
 
@@ -154,7 +224,7 @@ async fn start_conversation(
     client: &mut CodexClient,
     request: &TaskRequest,
     workspace: &Workspace,
-    task: &mut MemoryTask,
+    task: &mut TaskJournal<'_>,
 ) -> Result<(String, String)> {
     ensure_model(client, &request.engine.model).await?;
     let thread = client
@@ -166,13 +236,22 @@ async fn start_conversation(
         "engine.bound",
         json!({"thread_id": thread_id, "session_id": session_id}),
         None,
+        None,
         now()?,
-    )?;
+    )
+    .await?;
     let turn = client
         .request("turn/start", turn_params(request, workspace, &thread_id)?)
         .await?;
     let turn_id = required_pointer(&turn, "/turn/id")?;
-    task.append("turn.started", json!({"turn_id": turn_id}), None, now()?)?;
+    task.append(
+        "turn.started",
+        json!({"turn_id": turn_id}),
+        None,
+        None,
+        now()?,
+    )
+    .await?;
     Ok((thread_id, turn_id))
 }
 
@@ -180,7 +259,7 @@ async fn drive(
     client: &mut CodexClient,
     request: &TaskRequest,
     workspace: &Workspace,
-    task: &mut MemoryTask,
+    task: &mut TaskJournal<'_>,
     thread_id: &str,
     turn_id: &str,
     deadline: Instant,
@@ -202,8 +281,10 @@ async fn drive(
                     "task.cancelled",
                     json!({"reason":"wall budget exceeded"}),
                     None,
+                    None,
                     now()?,
-                )?;
+                )
+                .await?;
                 break;
             }
         };
@@ -212,18 +293,20 @@ async fn drive(
             let captured = workspace
                 .capture(&request.permissions.writable_paths)
                 .await?;
-            append_diff(task, &captured)?;
+            append_diff(task, &captured).await?;
             evidence = Some(captured);
         }
         let input_required = mapped.kind == "input.required";
-        task.append_normalized(mapped)?;
+        task.append_normalized(mapped).await?;
         if input_required {
             task.append(
                 "task.escalated",
                 json!({"reason":"parent input required"}),
                 None,
+                None,
                 now()?,
-            )?;
+            )
+            .await?;
         }
     }
     Ok(match evidence {
@@ -237,7 +320,7 @@ async fn drive(
 }
 
 fn finish(
-    mut task: MemoryTask,
+    task: TaskJournal<'_>,
     handle: TaskHandle,
     workspace: Workspace,
     request: &TaskRequest,
@@ -246,7 +329,6 @@ fn finish(
 ) -> Result<RunResult> {
     let elapsed = u64::try_from(started.elapsed().as_millis())
         .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
-    task.projection.usage.wall_ms = elapsed;
     let receipt = build_receipt(&task.projection, request, evidence, elapsed)?;
     Ok(RunResult {
         handle,
@@ -358,67 +440,18 @@ fn task_prompt(request: &TaskRequest) -> String {
     )
 }
 
-fn append_diff(task: &mut MemoryTask, evidence: &WorkspaceEvidence) -> Result<()> {
+async fn append_diff(task: &mut TaskJournal<'_>, evidence: &WorkspaceEvidence) -> Result<()> {
     let count = u64::try_from(evidence.changed_paths.len())
         .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
     task.append(
         "workspace.diff.updated",
         json!({"diff_hash": evidence.diff_hash, "changed_files": count}),
         None,
+        None,
         now()?,
-    )?;
+    )
+    .await?;
     Ok(())
-}
-
-fn build_receipt(
-    projection: &Projection,
-    request: &TaskRequest,
-    evidence: WorkspaceEvidence,
-    wall_ms: u64,
-) -> Result<Receipt> {
-    let status = match projection.status {
-        crate::protocol::TaskStatus::Completed => ReceiptStatus::Completed,
-        crate::protocol::TaskStatus::Cancelled => ReceiptStatus::Cancelled,
-        crate::protocol::TaskStatus::Escalated | crate::protocol::TaskStatus::InputRequired => {
-            ReceiptStatus::Escalated
-        }
-        _ => ReceiptStatus::Failed,
-    };
-    let summary = if projection.summary.is_empty() {
-        "Worker ended without an agent summary.".to_owned()
-    } else {
-        projection.summary.clone()
-    };
-    let mut usage: Usage = projection.usage.clone();
-    usage.wall_ms = wall_ms;
-    Ok(Receipt {
-        protocol_version: PROTOCOL_VERSION.to_owned(),
-        receipt_id: new_id("rcp")?,
-        task_id: projection.task_id.clone(),
-        attempt: projection.attempt,
-        status,
-        summary,
-        artifacts: vec![evidence.artifact],
-        verification: vec![Verification {
-            command: "workspace path boundary".to_owned(),
-            exit_code: Some(0),
-            output_sha256: Some(evidence.diff_hash),
-            passed: true,
-        }],
-        verification_waiver: Some(
-            "Parent acceptance verification remains required after the bounded worker run."
-                .to_owned(),
-        ),
-        usage,
-        engine: ReceiptEngine {
-            kind: request.engine.kind.clone(),
-            requested_model: request.engine.model.clone(),
-            observed_models: projection.engine.observed_models.clone(),
-            version: Some("codex-cli 0.150.1".to_owned()),
-        },
-        final_event_seq: projection.event_seq,
-        completed_at: now()?,
-    })
 }
 
 fn required_pointer(value: &Value, pointer: &str) -> Result<String> {

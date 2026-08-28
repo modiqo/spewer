@@ -7,6 +7,8 @@ pub mod protocol;
 pub mod reducer;
 /// End-to-end bounded task execution.
 pub mod runner;
+/// Durable event log, projection, and source deduplication.
+pub mod store;
 /// Isolated Git worktree preparation and artifact capture.
 pub mod workspace;
 
@@ -17,4 +19,5 @@ pub mod codex;
 /// Typed failures returned by Spewer operations.
 pub mod error;
 
+mod receipt;
 mod util;
