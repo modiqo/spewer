@@ -1,5 +1,14 @@
 //! Spewer command-line entrypoint.
 
-fn main() {
-    println!("spewer 0.1.0: CP0 contract shell");
+use std::process::ExitCode;
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
+    match spewer::cli::run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("spewer: {error}");
+            ExitCode::FAILURE
+        }
+    }
 }
