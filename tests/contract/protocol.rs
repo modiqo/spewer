@@ -1,0 +1,11 @@
+use spewer::protocol::{PROTOCOL_VERSION, TaskRequest};
+
+#[test]
+fn task_fixture_decodes() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = include_str!("../fixtures/task-request.json");
+    let request: TaskRequest = serde_json::from_str(fixture)?;
+    request.validate()?;
+    assert_eq!(request.protocol_version, PROTOCOL_VERSION);
+    assert_eq!(request.callback.consumer_id.as_deref(), Some("play"));
+    Ok(())
+}

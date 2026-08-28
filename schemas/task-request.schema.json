@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spewer.dev/schema/0.1/task-request.json",
+  "title": "Spewer TaskRequest",
+  "type": "object",
+  "required": ["protocol_version", "idempotency_key", "objective", "workspace", "permissions", "budgets", "engine", "callback"],
+  "properties": {
+    "protocol_version": {"const": "0.1"},
+    "task_id": {"type": "string", "minLength": 1},
+    "idempotency_key": {"type": "string", "minLength": 1, "maxLength": 512},
+    "objective": {"type": "string", "minLength": 1, "maxLength": 65536},
+    "acceptance": {"type": "array", "items": {"type": "string"}, "maxItems": 256},
+    "workspace": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string", "minLength": 1}, "base_revision": {"type": ["string", "null"]}}, "additionalProperties": true},
+    "context": {"type": "object"},
+    "permissions": {"type": "object"},
+    "budgets": {"type": "object"},
+    "engine": {"type": "object"},
+    "callback": {"type": "object"}
+  },
+  "additionalProperties": true
+}
+

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spewer.dev/schema/0.1/receipt.json",
+  "title": "Spewer Receipt",
+  "type": "object",
+  "required": ["protocol_version", "receipt_id", "task_id", "attempt", "status", "summary", "artifacts", "verification", "usage", "engine", "final_event_seq", "completed_at"],
+  "properties": {
+    "protocol_version": {"const": "0.1"},
+    "receipt_id": {"type": "string"},
+    "task_id": {"type": "string"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "status": {"enum": ["completed", "failed", "cancelled", "escalated"]},
+    "summary": {"type": "string"},
+    "artifacts": {"type": "array"},
+    "verification": {"type": "array"},
+    "verification_waiver": {"type": ["string", "null"]},
+    "usage": {"type": "object"},
+    "engine": {"type": "object"},
+    "final_event_seq": {"type": "integer"},
+    "completed_at": {"type": "string"}
+  },
+  "additionalProperties": true
+}
+

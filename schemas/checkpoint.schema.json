@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spewer.dev/schema/0.1/checkpoint.json",
+  "title": "Spewer Checkpoint",
+  "type": "object",
+  "required": ["protocol_version", "checkpoint_id", "task_id", "attempt", "event_seq", "projection_version", "engine", "workspace", "resumable", "reason", "created_at"],
+  "properties": {
+    "protocol_version": {"const": "0.1"},
+    "checkpoint_id": {"type": "string"},
+    "task_id": {"type": "string"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "event_seq": {"type": "integer"},
+    "projection_version": {"type": "integer"},
+    "engine": {"type": "object"},
+    "workspace": {"type": "object"},
+    "resumable": {"type": "boolean"},
+    "reason": {"type": "string"},
+    "created_at": {"type": "string"}
+  },
+  "additionalProperties": true
+}

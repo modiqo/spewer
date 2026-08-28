@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spewer.dev/schema/0.1/event.json",
+  "title": "Spewer Event",
+  "type": "object",
+  "required": ["protocol_version", "task_id", "attempt", "seq", "type", "observed_at", "data"],
+  "properties": {
+    "protocol_version": {"const": "0.1"},
+    "task_id": {"type": "string"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "seq": {"type": "integer", "minimum": 1},
+    "type": {"type": "string"},
+    "observed_at": {"type": "string"},
+    "data": {},
+    "source": {"type": ["object", "null"]}
+  },
+  "additionalProperties": true
+}
+

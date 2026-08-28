@@ -1,0 +1,14 @@
+{
+  "protocol_version": "0.1",
+  "idempotency_key": "fixture:parser:1",
+  "objective": "Update the parser and its focused tests",
+  "acceptance": ["The focused parser tests pass"],
+  "workspace": {"path": "/tmp/spewer-fixture", "base_revision": null},
+  "context": {"files": ["src/parser.rs"], "notes": ["Preserve the public API"]},
+  "permissions": {"filesystem": "workspace-write", "network": "deny", "commands": "engine-policy", "writable_paths": ["src/parser.rs", "tests/parser.rs"]},
+  "budgets": {"wall_seconds": 900, "tokens": 50000, "tool_calls": 100, "retries": 1, "cost_usd": 2.0},
+  "engine": {"kind": "codex-app-server", "model": "configured-cheap-model"},
+  "callback": {"mode": "stream", "consumer_id": "play"},
+  "private_continuation": {"play_run": "opaque"}
+}
+
