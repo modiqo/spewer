@@ -1,336 +1,427 @@
-# Spewer keeps frontier judgment connected to cheaper repeatable work
+# Spewer lets your frontier harness delegate repeatable work
 
 Status: **Implemented through CP17**
+
 Date: **2026-08-29**
 
-Spewer is a local delegation service for frontier harnesses. It gives them one durable way to send bounded work to a cheaper worker.
+Spewer is a local delegation service for frontier harnesses. You keep working in Codex,
+Claude Code, Kimi, or another preferred harness. A lower-cost worker handles bounded work.
 
-The frontier harness keeps classification, judgment, and the final answer. Spewer owns execution, recovery, and delivery until the harness accepts a receipt.
+The frontier harness keeps the conversation, broad context, judgment, and final answer.
+Spewer owns the delegated task, worker capacity, restart recovery, and terminal receipt.
 
-This document separates the current experience from the machinery that supports it. Each section states what exists now and what remains to build.
+This document has three parts:
 
-## Status words keep the design honest
+1. Why Spewer exists and which parts make it work.
+2. How to install and use the generic Luna worker.
+3. How to specialize that worker without changing the frontier harness.
 
-- **Implemented:** production code and tests already support the behavior.
-- **Partial:** the underlying contract exists, but the intended experience or generality does not.
-- **Planned:** this checkpoint proposes the behavior; production code does not implement it yet.
+## Part I: Spewer adds delegation without replacing your harness
 
-The diagrams show logical boundaries. Several boxes can live in one process without losing those boundaries.
+OpenCode and Pi are coding harnesses. Both can connect their own agent experience to many
+providers and models.
 
-## 1. Installation prepares one useful default worker
+Spewer solves a different problem. It connects the harness you already chose to durable
+commodity workers behind one local protocol.
 
-`spewer install` should leave a user with a working service and a default worker. It should not require them to assemble the architecture.
+You do not move your primary work into Spewer. You keep using the harness whose interface,
+context handling, tools, and subscriptions already work for you.
 
-![Installation prepares the default worker](assets/how-it-works/01-install-worker.png)
+Spewer installs a worker runtime behind the service. It does not ask you to adopt another
+primary agent interface.
 
-### The installer owns setup
+### Provider choice and durable delegation solve different problems
 
-The installer checks the host, creates private Spewer directories, and installs the supported worker runtime. It also records the selected engine configuration.
+A provider abstraction chooses the model for the current harness turn. Spewer sends bounded work
+out of that turn, keeps it alive independently, and returns evidence.
 
-For the first distribution, that runtime is the Codex CLI and its App Server command. The configured default model is `gpt-5.6-luna`.
-
-Spewer installs the runtime that can reach the model. It does not download hosted model weights or place a model inside the Spewer process.
-
-An authenticated Codex installation reaches the hosted model. A future local engine driver may install a local runtime and pull open weights.
-
-### The default capsule is generic
-
-A capsule is a worker description that Spewer can advertise and dispatch. A generic capsule accepts ordinary bounded work without claiming a specialized skill.
-
-A skill binding specializes that capsule. Spewer records the skill name, description, revision, digest, and local source. When a harness delegates through that capsule, Spewer snapshots the exact instructions before accepting the task.
-
-The same worker can therefore advertise `generic` today and `specialized` after a skill binds. The worker does not become a new Spewer implementation.
-
-### Current status and work to build
-
-| Part | Status | Checkpoint |
+| Concern | OpenCode or Pi | Spewer |
 |---|---|---|
-| Codex CLI discovery and `codex app-server --stdio` launch | **Implemented** | Spewer finds `codex` and starts App Server for leased work. |
-| Default model `gpt-5.6-luna` | **Implemented** | The task protocol uses this model when the caller does not choose one. |
-| One-command `spewer install` | **Implemented** | It finds or installs Codex, initializes defaults, verifies App Server, and starts or reuses the service. |
-| Generic capsule record | **Implemented** | Installation persists an owner-private `default` Luna capsule. |
-| Skill binding | **Implemented** | Bind and unbind validate `SKILL.md`, then atomically change the advertised state. |
-| Local open-weights installation | **Planned** | Let an engine package own runtime installation and model acquisition. |
+| Primary role | Interactive coding harness with model choice | Local delegation service |
+| Where the user works | Inside that harness | Inside the user's existing harness |
+| Worker selection | Selects a provider and model for its agent | Selects a generic or specialized capsule |
+| Delegated lifetime | Owned by the harness | Owned by a durable task journal |
+| Returned result | Agent response in that harness | Typed receipt with execution evidence |
+| Replacement cost | Adopt another harness experience | Add Spewer to the harness already in use |
 
-## 2. The detached service keeps delegated work alive
+This distinction makes Spewer complementary to Codex, Claude Code, Kimi, OpenCode, and Pi.
+Any of them can remain the frontier harness when it has a suitable Spewer adapter.
 
-The `spewer` service survives the terminal or frontier turn that started it. Durable state, rather than a parent process, owns accepted work.
+### Spewer moderates repeatable work instead of replacing frontier judgment
 
-![The detached service owns durable execution](assets/how-it-works/02-detached-service.png)
+Delegation fits work with a clear objective, bounded authority, and a checkable result. The
+frontier keeps novel reasoning, ambiguous tradeoffs, user interaction, and final accountability.
 
-### Startup is detached by default
+Every receipt records the selected capsule, skill, model, usage, artifacts, and verification.
+These facts let the frontier accept, reject, refine, or retry the worker result.
 
-`spewer serve` checks the private control socket before it starts another service. If a ready service exists, the command returns that service.
+Future routing policy can use repeated evidence to prefer lower-cost workers. Spewer does not
+silently change authority or claim that one successful task proves a permanent route.
 
-Otherwise, it detaches through `setsid`, redirects output to a private log, and waits for a successful control request. The caller receives the process identity and log path.
+The logical boundary stays the same when either endpoint changes.
 
-### The scheduler leases work to engines
+![A pluggable frontier harness delegates through Spewer to a pluggable worker](assets/how-it-works/06-pluggable-ends.png)
 
-The service accepts a task before it starts a worker process. It commits the task, queues a turn, and returns a stable task handle.
+### Eight parts keep the boundary understandable
 
-The scheduler leases queued turns against `max_workers`. Version 0.1 starts one App Server process for each active leased turn.
+The complete flow contains eight parts. Each part owns one kind of state.
 
-### Storage closes the crash boundary
-
-The event log records history. Projections answer status queries, checkpoints mark recovery boundaries, and the outbox retains terminal receipts.
-
-No accepted task depends on a live shell, file descriptor, or model conversation. A restart reconstructs state from durable records.
-
-### Current status and work to build
-
-| Part | Status | Checkpoint |
+| Part | What it owns | Why it exists |
 |---|---|---|
-| Detached `serve`, readiness check, private log, duplicate-start protection | **Implemented** | The service starts detached unless the caller requests foreground mode. |
-| FIFO scheduler, worker leases, and bounded capacity | **Implemented** | Spewer starts App Server when a leased turn is ready. |
-| Event log, projections, checkpoints, and result outbox | **Implemented** | The durable supervisor and reducer exist. |
-| Install-time service start | **Implemented** | `spewer install` starts or reuses the detached service. |
-| Host login registration | **Planned** | Add only if real use shows that on-demand detached startup is insufficient. |
-| Long-lived warm engine pool | **Planned** | Keep worker runtimes warm only after measurements justify the extra lifecycle. |
+| Frontier harness | User conversation and final judgment | The user stays in their preferred agent experience. |
+| Spewer integration skill | When delegation fits | The frontier model learns the delegation boundary. |
+| Harness adapter | Host continuation and protocol calls | Harness-private state never enters Spewer. |
+| Protocol and capability cards | Stable operations and live workers | Adapters discover current generic or specialized capsules. |
+| Spewer service | Acceptance, queueing, capacity, and cancellation | Accepted work survives the frontier turn. |
+| Task journal and outbox | Events, recovery state, and receipts | Restarts do not erase accepted work or terminal results. |
+| Capsule and engine driver | Worker configuration and model connection | Spewer can change workers without changing its public lifecycle. |
+| Receipt | Outcome, model identity, skill identity, and evidence | The frontier can judge before using the result. |
 
-## 3. One protocol makes engines and harnesses replaceable
+The connected visual shows where each responsibility sits.
 
-The protocol is Spewer's public product boundary. It should stay small, versioned, and independent of Codex or any frontier harness.
+![A user request crosses the frontier skill, adapter, Spewer, and Luna worker](assets/how-it-works/07-connected-use-case.png)
 
-![The protocol separates stable operations from live capabilities](assets/how-it-works/03-protocol.png)
+### The capsule describes the worker available now
 
-### Stable operations describe the lifecycle
+A capsule is an advertised worker configuration. It names the engine, model, purpose, and
+current specialization.
 
-Version 0.1 exposes capabilities, submit, observe, result, cancel, acknowledge, load, and stop. JSON Lines messages cross a private Unix socket.
+The installed `default` capsule begins as `generic`. It uses Codex App Server with
+`gpt-5.6-luna` and accepts ordinary bounded work.
 
-Task requests carry work, authority, budgets, callback policy, and model selection. Receipts carry the terminal outcome, usage, artifacts, and delivery identity.
+Binding a `SKILL.md` changes the same capsule to `specialized`. The worker remains behind the
+same Spewer service and protocol.
 
-### Capability lookup describes the live installation
+Spewer currently ships hosted Luna through Codex App Server. Luna is the default commodity
+worker, not an open-weights model downloaded to the machine.
 
-The protocol schema is generated and versioned with the release. The capability document is looked up from the running service.
+An open-weights engine will use the same capsule boundary. That second production engine is
+CP18 work and is not implemented today.
 
-That lookup answers what is true now: service version, engine kinds, models, limits, operations, and capsule inventory. An adapter may cache it briefly and refresh after changes.
+### Capability cards describe live state
 
-This split avoids two bad extremes. A frozen adapter misses new bindings, while a fully generated protocol makes compatibility unpredictable.
+The protocol has a stable operation set and a live capability catalog. The stable operations
+change only with protocol compatibility; the catalog changes when a worker or skill changes.
 
-### Capsules advertise generic or specialized work
+![The Spewer protocol separates stable operations from live capability cards](assets/how-it-works/03-protocol.png)
 
-The capability document lists each capsule as `generic` or `specialized`. A specialized entry includes its safe skill identity, description, revision, and digest. Local source paths and instruction text remain private.
+Each capsule card contains:
 
-The frontier harness uses these declarations as evidence for routing. Spewer validates the selected capsule again when it accepts the task.
+- a stable capsule ID;
+- a content revision;
+- `generic` or `specialized` state;
+- the engine kind and model;
+- a short purpose description;
+- safe skill identity and digest when specialized.
 
-### Current status and work to build
+The card never exposes local skill paths or instruction text. Spewer reads the exact skill only
+after an adapter selects that capsule revision.
 
-| Part | Status | Checkpoint |
-|---|---|---|
-| Versioned service operations over a private Unix socket | **Implemented** | Protocol 0.1 supports the durable task lifecycle. |
-| Engine and service capability response | **Implemented** | The service reports its protocol and Codex engine shape. |
-| Capsule advertisements in capabilities | **Implemented** | Lookup returns generic or specialized workers and safe skill metadata. |
-| Capsule selection in `TaskRequest` | **Implemented** | A request selects a capsule ID and revision; Spewer validates and snapshots it before acceptance. |
-| Dynamic capsule lookup and cache invalidation | **Implemented** | Every lookup reads current manifests and returns a deterministic content revision. |
-| Compatibility policy | **Implemented** | Requests without a capsule retain version 0.1 behavior; routed requests bind an exact live revision. |
+### The adapter preserves the frontier harness
 
-## 4. A harness adapter preserves the frontier harness's control
+The adapter translates one harness lifecycle into Spewer operations. It also retains the
+harness's private continuation.
 
-A harness adapter is host-side integration code. It translates a harness's lifecycle into Spewer operations and preserves the host's private continuation.
+![The adapter preserves the frontier continuation while Spewer runs the worker](assets/how-it-works/04-harness-adapter.png)
 
-![The harness adapter bridges a frontier harness to Spewer](assets/how-it-works/04-harness-adapter.png)
+The reusable client provides four host operations:
 
-### The adapter is not a model or router
+- `discover` reads service capabilities and live capsule cards;
+- `delegate` binds one current card and accepts a durable task;
+- `check` returns progress, a polling delay, and any terminal receipt;
+- `cancel` stops unwanted work idempotently.
 
-The adapter submits tasks, follows events, stores terminal receipts, resumes the host, and acknowledges delivery. It does not decide which work deserves delegation.
+The model-facing skill keeps this surface to three actions: delegate, check, and cancel.
+Discovery occurs inside the adapter or during delegation.
 
-It also keeps private host state out of Spewer. A continuation token belongs to the harness that created it.
+### The detached service makes delegation restart-safe
 
-### A stable shell can use dynamic lookup
+Spewer accepts a task before it starts a worker. The scheduler then leases queued work up to
+the configured worker limit.
 
-Most adapter code is written once against the versioned service protocol. At startup or first use, it asks Spewer for current capabilities and capsules.
+![The detached service owns accepted work, worker leases, and durable state](assets/how-it-works/02-detached-service.png)
 
-New bindings therefore appear without regenerating the adapter. Regeneration is needed only when the stable protocol version or host integration contract changes.
+The service records every transition in SQLite. It rebuilds task projections from that journal
+after a restart.
 
-### The adapter closes two durable handoffs
+Pristine interrupted work can return to the queue. Work with uncertain external effects becomes
+`escalated` instead of running twice.
 
-The first handoff stores intent before submission. The second stores the receipt before the host resumes.
+This is conservative restart safety, not a claim that every failure disappears. Spewer preserves
+accepted work and refuses to guess when replay could duplicate an effect.
 
-Acknowledgement happens only after the frontier harness durably accepts the result. Retries return the same task, receipt, and claim.
+## Part II: Install and use the generic Luna worker
 
-### Current status and work to build
+The shortest useful path installs Spewer, verifies Luna, and makes delegation available to
+Codex. It does not require a separate connection ceremony.
 
-| Part | Status | Checkpoint |
-|---|---|---|
-| Durable Play adapter with submit, watch, claim, complete, and retry safety | **Implemented** | Play stores bindings and receipts in an owner-private SQLite inbox. |
-| Small model-visible surface | **Implemented** | `delegate`, `check`, and `cancel` hide ordinary lifecycle plumbing. |
-| Reusable harness client | **Implemented** | The Rust client provides discovery, capsule-bound delegation, combined checking, and cancellation. |
-| Durable host inbox | **Implemented for Play** | Other hosts must persist their private continuation and receipt application through their own adapter. |
-| Adapter conformance kit | **Partial** | Play and the reference client pass service tests; cross-host certification remains. |
-| Capsule-aware routing lookup | **Implemented** | Delegation reads the live catalog, selects an advertised revision, and fails safely when it is missing or stale. |
+The user experience stays at install, ask, and review.
 
-## 5. A frontier plugin gives the model a small Spewer surface
+![The user installs once, asks normally, and reviews the returned result](assets/how-it-works/08-user-experience.png)
 
-The plugin is the harness-specific package a user installs. It contains the adapter connection and brief instructions for when delegation is appropriate.
+The installation visual shows what one command prepares.
 
-![A frontier plugin exposes three tools and live capsule lookup](assets/how-it-works/05-frontier-plugin.png)
+![Spewer install prepares Codex App Server, the default capsule, and the detached service](assets/how-it-works/01-install-worker.png)
 
-### Tools perform actions
+### Step 1: Install Spewer and its shipped worker
 
-The reference Codex skill uses `spewer delegate`, `spewer check`, and `spewer cancel`. A native host plugin can project the same three actions as tools.
+Install the current checkout:
 
-A native host adapter should hide socket paths, event cursors, inbox rows, claims, and acknowledgements. The reference CLI retains structured lifecycle fields for deterministic integrations, but its skill only requires the task ID.
-
-### A minimal skill teaches selection
-
-A small Spewer integration skill explains the delegation boundary. It tells the frontier model to delegate bounded, checkable work and retain final judgment.
-
-Specialized worker skills do not need to be copied into the frontier context. Capability lookup exposes their safe identity, description, and revision. Spewer injects the exact bound instructions only into the selected worker task.
-
-The frontier model can then discover a suitable generic or specialized capsule through the adapter. The adapter returns match evidence, not an opaque routing decision.
-
-### Connection should follow installation
-
-Users should not need a general `spewer connect <frontier-harness>` command. Each harness already has its own plugin installation mechanism.
-
-For Codex, `spewer install` places the reference skill into the configured Codex skill directory. This is installation, not a new architectural connection layer.
-
-### Current status and work to build
-
-| Part | Status | Checkpoint |
-|---|---|---|
-| Play-side Spewer adapter commands | **Implemented** | The host can call the durable lifecycle today. |
-| Reference Spewer integration skill | **Implemented** | The bundled skill teaches bounded delegation and preserves frontier judgment. |
-| Codex skill installation | **Implemented** | Setup installs identical content idempotently and refuses to overwrite a changed file. |
-| Native Codex, Claude, Cursor, and other plugin packages | **Planned** | Package the same client contract when a host needs richer native tools or durable continuation. |
-| Required `connect` command | **Not needed** | Live discovery happens during delegation. |
-
-## 6. Pluggable ends let Spewer moderate repeatable work
-
-Spewer should connect any compliant frontier harness to any compliant worker engine. The durable middle remains the same when either end changes.
-
-![Pluggable frontier and worker ends meet at Spewer](assets/how-it-works/06-pluggable-ends.png)
-
-### The frontier side supplies judgment
-
-Frontier models are best reserved for work that needs broad context, novel reasoning, ambiguous tradeoffs, or final accountability. Their harnesses decide what to delegate.
-
-### The worker side supplies throughput
-
-Cheaper models can handle repeatable work when the task has a clear contract, bounded tools, useful examples, and a checkable result. A specialized skill can improve that fit.
-
-Spewer calls this moderation rather than automatic replacement. The frontier keeps control and can reject, retry, refine, or complete the work itself.
-
-### Evidence improves future routing
-
-Every receipt can record capsule identity, skill revision, model, latency, usage, verifier outcome, and frontier acceptance. Those facts support later routing policy.
-
-Learning must change declared policy, not silently rewrite authority. A route can become cheaper only after repeated evidence shows that its result remains acceptable.
-
-### Engine drivers isolate worker differences
-
-Each engine driver probes capabilities, starts work, normalizes events, responds to approvals, interrupts, inspects, resumes, and closes. Spewer's controller sees only normalized events.
-
-A Codex driver can reach hosted Luna today. A future driver can reach an open-weights runtime without changing harness adapters or receipts.
-
-### Current status and work to build
-
-| Part | Status | Checkpoint |
-|---|---|---|
-| Engine-neutral core and conceptual engine interface | **Implemented** | The controller does not parse Codex-specific payloads. |
-| Codex App Server driver | **Implemented** | This is the only production worker engine. |
-| Fake engine seam | **Implemented** | Tests prove scheduler and recovery behavior without Codex. |
-| Additional hosted or open-weights drivers | **Planned** | Define packaging, installation, authentication, and capability probes. |
-| Policy-based capsule matcher | **Planned** | Rank eligible capsules while exposing reasons and preserving frontier choice. |
-| Outcome learning | **Planned** | Record verifier and acceptance evidence before adjusting routing defaults. |
-
-## 7. One delegated request crosses every boundary
-
-The complete flow remains understandable when every component appears together. This example delegates a repeatable release-note draft to a specialized worker.
-
-![A complete request crosses the frontier plugin, adapter, Spewer, and worker](assets/how-it-works/07-connected-use-case.png)
-
-### The frontier discovers a suitable capsule
-
-The user asks the frontier harness to prepare a release. The frontier plugin asks its adapter for current Spewer capabilities.
-
-The lookup returns a `release-notes` capsule bound to a known skill revision. The frontier selects it because the task is bounded and the result is reviewable.
-
-### Spewer executes under an explicit contract
-
-The adapter stores its private continuation and submits the request. Spewer validates the capsule digest, authority, workspace, and budgets before committing the task.
-
-The scheduler leases the turn to the Codex driver. App Server runs Luna with the selected skill and emits progress, usage, approvals, and artifacts.
-
-Spewer normalizes those events and persists them. A worker crash can fail or resume the task without losing the accepted handle.
-
-### The frontier receives evidence, then judges
-
-Spewer writes one terminal receipt to its outbox. The adapter stores that receipt in its inbox before it resumes the frontier harness.
-
-The frontier reviews the draft and evidence. It may accept, revise, retry with another capsule, or handle the task itself.
-
-After the host accepts the result, the adapter acknowledges the receipt. Spewer can then close delivery without owning the user's final answer.
-
-### Current status and work to build
-
-| Flow segment | Status | Checkpoint |
-|---|---|---|
-| Submit through durable execution to a terminal receipt | **Implemented** | Spewer and the Play adapter prove the lifecycle. |
-| Frontier continuation, claim, and acknowledgement | **Implemented for Play** | Other harness packages do not exist yet. |
-| Skill-aware discovery and capsule selection | **Implemented** | The client selects a live revision; Spewer snapshots and executes its exact binding. |
-| Luna started through Codex App Server | **Implemented** | Spewer starts one App Server per leased turn. |
-| Verifier outcome and acceptance feedback | **Planned** | Extend receipts without weakening deterministic replay. |
-
-## 8. The user experience hides the architecture
-
-The product succeeds when users can benefit from these boundaries without learning them first. Setup should have one default path and reveal details only when needed.
-
-![The user sees install, ask, and result while Spewer handles the machinery](assets/how-it-works/08-user-experience.png)
-
-### First use should take one command
-
-The target experience starts with this command:
-
-```sh
-spewer install
+```console
+$ cargo install --path . --locked
 ```
 
-The observable result is a ready local service, a working generic Luna capsule, a reference Codex delegation skill, and clear authentication status.
+Prepare the worker and service:
 
-The user then asks their frontier harness normally. The plugin discovers Spewer and delegates only when the request fits its policy.
+```console
+$ spewer install
+```
 
-### Specialization should be optional and reversible
+The command performs these actions:
 
-An advanced user can bind a skill to a generic capsule through an explicit command or plugin action. Unbinding restores the generic advertisement.
+1. Finds Codex CLI or runs its official installer.
+2. Creates owner-private Spewer configuration.
+3. Creates the generic `default` Luna capsule.
+4. Verifies the Codex App Server handshake and authentication.
+5. Installs the reference Codex delegation skill.
+6. Starts or reuses the detached Spewer service.
 
-The capability revision changes immediately. Connected adapters discover the new state on their next lookup without reconnecting or regenerating code.
+If authentication is missing, run `codex` once and repeat `spewer install`. Spewer reports
+readiness only after the App Server handshake succeeds.
 
-### Failures should name the next action
+### Step 2: Prove the worker responds correctly
 
-Missing authentication should point to sign-in. An unavailable capsule should show eligible alternatives, and a stopped service should offer one safe start command.
+Run one foreground question:
 
-Users should never diagnose event cursors, worker leases, or outbox rows to complete ordinary work. Those details exist for operators and recovery tools.
+```console
+$ spewer ask "Return only the sum of 17 and 19." --text
+36
+```
 
-### Adoption constraints
+This command waits for Luna and prints its answer. A correct answer proves configuration,
+App Server startup, model access, execution, and receipt creation.
 
-- A default installation must be useful before the user binds a skill.
-- A frontier plugin must discover the service without a required `connect` ceremony.
-- The model-visible interface must stay at three ordinary actions.
-- Every delegation must remain inspectable, cancellable, and attributable.
-- Advanced engines, skills, and policies must remain optional layers.
+Inspect the worker card:
 
-### Current status and work to build
+```console
+$ spewer capabilities
+```
 
-| Experience | Status | Checkpoint |
-|---|---|---|
-| Manual init, doctor, serve, and ask | **Implemented** | The individual lifecycle commands remain available for operators. |
-| Detached service behavior | **Implemented** | Repeated startup returns the existing ready service. |
-| One-command installation and default capsule | **Implemented** | One command prepares Codex, configuration, capsule, and detached service. |
-| Skill-led discovery and delegation in Codex | **Implemented** | The installed skill uses the three CLI actions and live capsule lookup. |
-| Native integration in other frontier hosts | **Planned** | Each host can package the same client while retaining its private continuation. |
-| Capsule management CLI | **Implemented** | List, bind, and unbind cover the first explicit administration path. |
-| Capsule management UI | **Planned** | Add richer UI only after use proves the need. |
+The response should advertise `default` as `generic`, with engine `codex-app-server` and model
+`gpt-5.6-luna`.
 
-## The checkpoint keeps one simple promise
+The relevant card looks like this:
 
-Install Spewer once, then ask a frontier model for work as usual. Spewer should make cheaper repeatable execution available without moving judgment, safety, or recovery into prompts.
+```json
+{
+  "id": "default",
+  "revision": "<capsule-sha256>",
+  "kind": "generic",
+  "description": "General bounded work through Codex App Server",
+  "engine": {
+    "kind": "codex-app-server",
+    "model": "gpt-5.6-luna"
+  },
+  "skill": null
+}
+```
 
-CP16 binds accepted work to an immutable capsule snapshot. CP17 gives frontier harnesses the three-action client and installs the reference Codex skill. The next build slice is CP18: prove the engine boundary with a second production worker.
+### Step 3: Choose foreground or background work
+
+Use foreground mode when the caller should wait for the answer:
+
+```console
+$ spewer ask "Summarize the repository test strategy." --text
+```
+
+Use detached mode when the caller should continue other work:
+
+```console
+$ spewer ask "Inspect the parser tests and summarize failures." --detach
+```
+
+Detached mode returns a durable task ID. Check it without blocking the frontier harness:
+
+```console
+$ spewer check <task-id>
+```
+
+If `ready` is false, wait for `observation.poll_after_ms` before checking again. A complete
+request submitted with `spewer delegate` always uses this durable background path.
+
+### Step 4: Let the frontier harness use Spewer
+
+`spewer install` already places the reference skill at this location:
+
+```text
+${CODEX_HOME:-$HOME/.codex}/skills/spewer-delegation/SKILL.md
+```
+
+There is no required `spewer connect <harness>` command. The installed skill teaches Codex
+when bounded delegation is appropriate.
+
+The integration visual shows the three commands exposed to the frontier model.
+
+![The frontier skill exposes delegate, check, and cancel over live capability lookup](assets/how-it-works/05-frontier-plugin.png)
+
+The current Codex skill uses:
+
+```console
+$ spewer delegate task.json --capsule default
+$ spewer check <task-id>
+$ spewer cancel <task-id> --reason "the parent no longer needs it"
+```
+
+For the first end-to-end proof, ask Codex explicitly:
+
+```text
+Use Spewer to delegate this bounded task to the default capsule:
+inspect the parser tests and return a concise failure summary.
+```
+
+Codex keeps the user conversation. Spewer runs Luna and returns the receipt. Codex then judges
+that receipt before answering the user.
+
+The current integration is an Agent Skill over the CLI client. Native packages for Claude Code,
+Kimi, OpenCode, Pi, and other harnesses remain future integration work.
+
+### Step 5: Increase local worker capacity
+
+Spewer can lease several local workers concurrently. Start a new service with four worker slots:
+
+```console
+$ spewer stop
+$ spewer install --max-workers 4
+```
+
+`spewer stop` first stops acceptance and drains accepted work. The next installation starts the
+service with the new limit.
+
+Each active lease starts its own App Server worker in version 0.1. The journal, scheduler, and
+outbox coordinate those workers through one service.
+
+This is local concurrent scale-out. Distributed workers on several machines are not implemented.
+
+## Part III: Specialize the same worker with a skill
+
+Specialization changes what the worker advertises. It does not replace Spewer, the service,
+the protocol, or the frontier harness.
+
+### Step 1: Bind a skill to the default capsule
+
+Bind a valid skill directory or `SKILL.md`:
+
+```console
+$ spewer capsule bind default /absolute/path/to/review-skill
+```
+
+The manifest records the skill name, description, revision, digest, and private local source.
+The running service does not restart.
+
+Confirm the change:
+
+```console
+$ spewer capabilities
+```
+
+The `default` card now reports `kind: specialized` and includes safe skill metadata. The catalog
+revision and capsule revision change immediately.
+
+The specialized card adds the bound skill identity:
+
+```json
+{
+  "id": "default",
+  "revision": "<new-capsule-sha256>",
+  "kind": "specialized",
+  "engine": {
+    "kind": "codex-app-server",
+    "model": "gpt-5.6-luna"
+  },
+  "skill": {
+    "name": "review",
+    "description": "Review bounded code changes",
+    "revision": "1",
+    "digest": "<skill-sha256>"
+  }
+}
+```
+
+### Step 2: Let the adapter recognize specialization
+
+An adapter calls `discover` or `spewer capabilities` to read current cards. It can cache the
+catalog until the catalog revision changes.
+
+For the reference Codex skill, `spewer delegate --capsule default` performs that lookup again.
+The response returns the selected card, including its specialized state and skill identity.
+
+Spewer independently validates the card before accepting work. A stale revision, edited skill,
+missing source, or engine mismatch fails before the task enters the queue.
+
+The accepted task stores an immutable copy of the exact skill instructions. Later edits, binds,
+or unbinds affect new tasks only.
+
+### Step 3: Ask the specialized question through the frontier harness
+
+Ask Codex to use the specialized default worker:
+
+```text
+Use Spewer's default capsule to review these parser changes.
+Apply the bound review skill and return the receipt with your final judgment.
+```
+
+The sequence is now:
+
+1. Codex classifies the task as bounded and independently checkable.
+2. The adapter reads the live `default` card.
+3. Spewer snapshots its specialized skill before acceptance.
+4. Luna performs the task with those exact instructions.
+5. Spewer stores events and emits one terminal receipt.
+6. Codex checks the receipt and gives the user its own final answer.
+
+The receipt identifies the capsule revision, specialization, skill digest, requested model, and
+observed model. It never includes the private skill instructions.
+
+Unbind the skill to return the same worker to generic service:
+
+```console
+$ spewer capsule unbind default
+```
+
+### Current boundaries remain explicit
+
+| Capability | Current status |
+|---|---|
+| Generic Luna capsule through Codex App Server | **Implemented** |
+| Foreground questions and detached tasks | **Implemented** |
+| Durable journal, recovery, cancellation, and receipts | **Implemented** |
+| Configurable local worker concurrency | **Implemented** |
+| Live generic or specialized capability cards | **Implemented** |
+| Immutable skill binding and receipt evidence | **Implemented** |
+| Reference Codex delegation skill | **Implemented** |
+| Durable host continuation and receipt application | **Implemented for Play** |
+| Semantic ranking across several capsules | **Planned** |
+| Production open-weights engine | **Planned for CP18** |
+| Native integrations for other frontier harnesses | **Planned** |
+| Distributed multi-machine workers | **Not implemented** |
+
+## The product promise stays small
+
+Keep the frontier harness you already trust. Give it one durable way to delegate bounded work
+to a lower-cost generic or specialized worker.
 
 ## Sources
 
-- [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) describes the supported standalone CLI installation and sign-in flow.
-- [Codex App Server](https://learn.chatgpt.com/docs/app-server) describes `codex app-server`, its default stdio transport, and its initialization handshake.
-- [Codex skills](https://learn.chatgpt.com/docs/build-skills) describes skill metadata and progressive disclosure.
-- [Spewer architecture](02-architecture.md), [engine adapter](11-engine-adapter.md), [harness communication](12-harness-communication.md), and [Play adapter](14-play-adapter.md) define the accepted local contracts summarized here.
+- [OpenCode](https://github.com/anomalyco/opencode) describes itself as an open-source coding
+  agent; its [provider documentation](https://opencode.ai/docs/providers) covers model and
+  provider selection.
+- [Pi](https://github.com/badlogic/pi-mono) includes a multi-provider model API and an interactive
+  coding-agent harness.
+- [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) describes the supported standalone CLI
+  installation and sign-in flow.
+- [Codex App Server](https://learn.chatgpt.com/docs/app-server) describes `codex app-server`, its
+  stdio transport, and initialization handshake.
+- [Codex skills](https://learn.chatgpt.com/docs/build-skills) describes skill metadata and loading.
+- [Spewer architecture](02-architecture.md), [task protocol](03-task-protocol.md),
+  [capsule execution](16-capsule-bound-execution.md), and
+  [frontier integration](17-frontier-integration.md) define the accepted local contracts.
