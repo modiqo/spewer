@@ -7,11 +7,14 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const SKILL: &[u8] = include_bytes!("../../integrations/codex/spewer-delegation/SKILL.md");
+const PREVIOUS_SKILL_DIGESTS: &[&str] =
+    &["1d6201f393166d91a94d1172f0cff955d6fab2fedbb265f7246305153fbf08ed"];
 
 #[derive(Debug, Serialize)]
 pub(super) struct SkillInstallReport {
     path: PathBuf,
     created: bool,
+    updated: bool,
     digest: String,
 }
 
@@ -31,12 +34,33 @@ pub(super) fn install() -> Result<SkillInstallReport> {
 }
 
 fn install_at(codex_root: &Path) -> Result<SkillInstallReport> {
+    install_at_with_previous(codex_root, PREVIOUS_SKILL_DIGESTS)
+}
+
+fn install_at_with_previous(
+    codex_root: &Path,
+    previous_digests: &[&str],
+) -> Result<SkillInstallReport> {
     let directory = codex_root.join("skills/spewer-delegation");
     let path = directory.join("SKILL.md");
     let digest = crate::util::sha256(SKILL)?;
     match std::fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.file_type().is_file() => {
-            if std::fs::read(&path)? != SKILL {
+            let existing = std::fs::read(&path)?;
+            if existing != SKILL {
+                let existing_digest = crate::util::sha256(&existing)?;
+                if previous_digests
+                    .iter()
+                    .any(|digest| *digest == existing_digest)
+                {
+                    replace_known_skill(&directory, &path)?;
+                    return Ok(SkillInstallReport {
+                        path,
+                        created: false,
+                        updated: true,
+                        digest,
+                    });
+                }
                 return Err(Error::new(
                     ErrorKind::InvalidInput,
                     format!(
@@ -48,6 +72,7 @@ fn install_at(codex_root: &Path) -> Result<SkillInstallReport> {
             return Ok(SkillInstallReport {
                 path,
                 created: false,
+                updated: false,
                 digest,
             });
         }
@@ -72,8 +97,34 @@ fn install_at(codex_root: &Path) -> Result<SkillInstallReport> {
     Ok(SkillInstallReport {
         path,
         created: true,
+        updated: false,
         digest,
     })
+}
+
+fn replace_known_skill(directory: &Path, path: &Path) -> Result<()> {
+    let temporary = directory.join(format!(".SKILL-{}.tmp", crate::util::new_id("upgrade")?));
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    private_file_options(&mut options);
+    let result = options
+        .open(&temporary)
+        .map_err(Error::from)
+        .and_then(|mut file| {
+            file.write_all(SKILL)?;
+            file.sync_all()?;
+            Ok(())
+        })
+        .and_then(|()| std::fs::rename(&temporary, path).map_err(Error::from))
+        .and_then(|()| {
+            std::fs::File::open(directory)?
+                .sync_all()
+                .map_err(Error::from)
+        });
+    if result.is_err() {
+        let _removed = std::fs::remove_file(&temporary);
+    }
+    result
 }
 
 #[cfg(unix)]
@@ -99,7 +150,7 @@ fn private_file_options(_options: &mut OpenOptions) {}
 
 #[cfg(test)]
 mod tests {
-    use super::install_at;
+    use super::{install_at, install_at_with_previous};
     use crate::error::Result;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -109,10 +160,30 @@ mod tests {
         let root = temporary()?;
         let first = install_at(&root)?;
         assert!(first.created);
+        assert!(!first.updated);
         let repeated = install_at(&root)?;
         assert!(!repeated.created);
+        assert!(!repeated.updated);
         std::fs::write(&first.path, "changed")?;
         assert!(install_at(&root).is_err());
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn exact_previous_skill_is_upgraded_without_overwriting_user_content() -> Result<()> {
+        let root = temporary()?;
+        let directory = root.join("skills/spewer-delegation");
+        std::fs::create_dir_all(&directory)?;
+        let path = directory.join("SKILL.md");
+        std::fs::write(&path, "previous shipped skill")?;
+        let digest = crate::util::sha256(b"previous shipped skill")?;
+        let upgraded = install_at_with_previous(&root, &[digest.as_str()])?;
+        assert!(!upgraded.created);
+        assert!(upgraded.updated);
+        assert_ne!(std::fs::read(&path)?, b"previous shipped skill");
+        std::fs::write(&path, "user edit")?;
+        assert!(install_at_with_previous(&root, &[digest.as_str()]).is_err());
         std::fs::remove_dir_all(root)?;
         Ok(())
     }

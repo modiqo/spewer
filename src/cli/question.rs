@@ -275,9 +275,7 @@ fn telemetry(receipt: &Receipt) -> Result<String> {
     let status = serde_json::to_string(&receipt.status)?;
     let status = status.trim_matches('"');
     let usage = &receipt.usage;
-    let cost = usage
-        .actual_cost_usd
-        .map_or_else(|| "unknown".to_owned(), |value| format!("${value:.6}"));
+    let cost = display_cost(usage.actual_cost_usd, &receipt.engine.kind);
     Ok(format!(
         "spewer: status={status} model={} input={} cached={} output={} reasoning={} tools={} wall_ms={} cost={} task={}",
         receipt.engine.requested_model,
@@ -293,5 +291,27 @@ fn telemetry(receipt: &Receipt) -> Result<String> {
 }
 
 fn optional(value: Option<u64>) -> String {
-    value.map_or_else(|| "unknown".to_owned(), |number| number.to_string())
+    value.map_or_else(|| "not-reported".to_owned(), |number| number.to_string())
+}
+
+fn display_cost(value: Option<f64>, engine: &str) -> String {
+    value.map_or_else(
+        || match engine {
+            crate::ollama::ENGINE_KIND => "local-unpriced".to_owned(),
+            _ => "not-reported".to_owned(),
+        },
+        |cost| format!("${cost:.6}"),
+    )
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::{display_cost, optional};
+
+    #[test]
+    fn missing_local_telemetry_has_explicit_labels() {
+        assert_eq!(optional(None), "not-reported");
+        assert_eq!(display_cost(None, "ollama"), "local-unpriced");
+        assert_eq!(display_cost(None, "codex-app-server"), "not-reported");
+    }
 }

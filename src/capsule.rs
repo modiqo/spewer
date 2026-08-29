@@ -1,5 +1,6 @@
 //! Durable worker descriptions advertised through live capability lookup.
 
+mod advertisement;
 mod binding;
 mod creation;
 mod selection;
@@ -14,6 +15,7 @@ use std::fs::{OpenOptions, read_dir};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use advertisement::advertisement;
 use creation::{create_at, ensure_default_at};
 
 const MANIFEST_VERSION: u32 = 1;
@@ -86,6 +88,12 @@ pub struct CapsuleAdvertisement {
     pub description: String,
     /// Engine selected for the capsule.
     pub engine: EngineRequest,
+    /// Whether the adapter can provide network access when a task authorizes it.
+    #[serde(default)]
+    pub network: bool,
+    /// Tool categories the adapter can provide when a task authorizes them.
+    #[serde(default)]
+    pub tools: Vec<String>,
     /// Bound skill identity when specialized.
     pub skill: Option<SkillAdvertisement>,
 }
@@ -314,35 +322,6 @@ fn unquote(value: &str) -> &str {
         Some(inner) => inner,
         None => value,
     }
-}
-
-fn advertisement(manifest: &CapsuleManifest) -> Result<CapsuleAdvertisement> {
-    let skill = manifest.skill.as_ref().map(|binding| SkillAdvertisement {
-        name: binding.name.clone(),
-        description: binding.description.clone(),
-        revision: binding.revision.clone(),
-        digest: binding.digest.clone(),
-    });
-    let kind = if skill.is_some() {
-        CapsuleKind::Specialized
-    } else {
-        CapsuleKind::Generic
-    };
-    let revision = sha256(&serde_json::to_vec(&(
-        &manifest.id,
-        kind,
-        &manifest.description,
-        &manifest.engine,
-        &skill,
-    ))?)?;
-    Ok(CapsuleAdvertisement {
-        id: manifest.id.clone(),
-        revision,
-        kind,
-        description: manifest.description.clone(),
-        engine: manifest.engine.clone(),
-        skill,
-    })
 }
 
 fn load_manifest(path: &Path) -> Result<CapsuleManifest> {

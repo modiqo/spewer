@@ -8,19 +8,25 @@ CP17 packages the existing service lifecycle for frontier harnesses. It does not
 
 The harness client exposes discovery, delegation, checking, and cancellation. Delegation performs live capability lookup and binds the chosen capsule revision before submission.
 
+Each capsule card exposes `network` and `tools`. The client rejects requested network, write, or
+allowlisted-command authority when the selected card does not advertise it.
+
 Checking combines cursor-based observation with non-consuming result retrieval. Its `ready` field states whether a stable terminal message exists. A simple CLI caller can replay from zero; a durable adapter stores the returned cursor. Both store the terminal message before acknowledging delivery.
 
 The client does not own a harness continuation. Each host still stores its private continuation and applies a receipt exactly once.
 
 ## Models see three actions
 
-The model-facing actions are `delegate`, `check`, and `cancel`. Discovery happens inside delegation for the selected capsule ID.
+The model-facing task actions are `delegate`, `check`, and `cancel`. Capability lookup remains a
+read-only routing step before delegation.
 
 `spewer delegate` accepts a complete task request and replaces its capsule and engine fields from current capabilities. `spewer check` returns observation and result in one JSON object. The existing cancel command remains idempotent.
 
 ## The reference skill teaches the ownership boundary
 
-The `spewer-delegation` skill applies to bounded, checkable work that can run independently. It tells the frontier model to retain ambiguous judgment, user communication, and the final answer.
+The `spewer-delegation` skill applies to bounded, checkable work that can run independently. It
+tells the frontier model to inspect `network` and `tools` before choosing a capsule. The frontier
+retains live-data work, ambiguous judgment, user communication, and the final answer.
 
 The skill uses the CLI projection so Codex can exercise the same client contract without a custom in-process extension. Other harnesses can call the Rust client directly or project the same operations into native tools.
 

@@ -106,6 +106,12 @@ $ spewer ask "What is 17 multiplied by 19?" --capsule qwen3-local --text
 323
 ```
 
+Its capability card advertises `"network": false` and `"tools": []`. Frontier adapters can
+therefore keep live-data and tool-dependent work before they submit it.
+
+Missing Ollama telemetry stays missing in receipts. The text view labels cached and reasoning
+counts as `not-reported`; an unpriced local run reports `cost=local-unpriced`.
+
 The CP18 Ollama worker performs read-only inference. It receives the objective, notes, projected
 files, acceptance criteria, and any bound skill. It rejects tasks that request commands or file
 writes.

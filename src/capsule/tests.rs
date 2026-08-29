@@ -29,6 +29,8 @@ fn default_capsule_specializes_and_returns_to_generic() -> Result<()> {
         crate::error::Error::new(crate::error::ErrorKind::InvalidInput, "catalog is empty")
     })?;
     assert_eq!(generic_capsule.kind, CapsuleKind::Generic);
+    assert!(generic_capsule.network);
+    assert_eq!(generic_capsule.tools, ["commands", "filesystem"]);
 
     let bound = bind_skill_at(&root.join("capsules"), "default", &skill)?;
     assert_eq!(
@@ -89,6 +91,19 @@ fn additional_capsule_is_created_once() -> Result<()> {
         engine.clone(),
     )?;
     assert_eq!(manifest.engine, engine);
+    let catalog = catalog_at(&root)?;
+    let qwen = catalog
+        .capsules
+        .iter()
+        .find(|capsule| capsule.id == "qwen3-local")
+        .ok_or_else(|| {
+            crate::error::Error::new(
+                crate::error::ErrorKind::InvalidInput,
+                "Qwen capsule is missing",
+            )
+        })?;
+    assert!(!qwen.network);
+    assert!(qwen.tools.is_empty());
     assert!(create_at(&root, "qwen3-local", "Duplicate".to_owned(), engine).is_err());
     std::fs::remove_dir_all(root)?;
     Ok(())

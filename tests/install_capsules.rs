@@ -68,6 +68,7 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
             .and_then(serde_json::Value::as_str),
         Some("generic")
     );
+    assert_default_runtime_capabilities(&before);
 
     let skill = root.join("skill/SKILL.md");
     let skill_parent = skill.parent().ok_or("skill parent missing")?;
@@ -136,6 +137,22 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
     wait_removed(&home.join("spewer.sock"))?;
     std::fs::remove_dir_all(root)?;
     Ok(())
+}
+
+fn assert_default_runtime_capabilities(capabilities: &serde_json::Value) {
+    assert_eq!(
+        capabilities
+            .pointer("/capsules/0/network")
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        capabilities
+            .pointer("/capsules/0/tools")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(2)
+    );
 }
 
 fn dispatch_specialized(

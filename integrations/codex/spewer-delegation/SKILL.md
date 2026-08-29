@@ -13,6 +13,14 @@ Keep ambiguous classification, user communication, tradeoffs, and the final answ
 
 Create a complete Spewer task JSON with the smallest projected context and authority that can succeed. Use a stable idempotency key and callback consumer owned by this harness.
 
+Read live capsule cards before choosing a worker:
+
+```sh
+spewer capabilities
+```
+
+Treat `network` and `tools` as hard routing limits. Do not delegate current or external-data work to a capsule with `network: false`. Do not delegate work that requires a tool unless the card lists that tool category. A specialized skill changes instructions; it does not grant network or tools.
+
 Run:
 
 ```sh

@@ -112,6 +112,7 @@ Each capsule card contains:
 - a content revision;
 - `generic` or `specialized` state;
 - the engine kind and model;
+- network availability and tool categories;
 - a short purpose description;
 - safe skill identity and digest when specialized.
 
@@ -223,6 +224,8 @@ The relevant card looks like this:
     "kind": "codex-app-server",
     "model": "gpt-5.6-luna"
   },
+  "network": true,
+  "tools": ["commands", "filesystem"],
   "skill": null
 }
 ```
@@ -335,8 +338,10 @@ $ spewer capsule add qwen3-local --engine ollama --model qwen3:30b-a3b
 This command verifies the model before it writes the owner-private capsule manifest. It preserves
 the existing `default` Luna capsule.
 
-The running service reads the updated catalog dynamically. `spewer capabilities` now advertises
-both engine kinds and the new generic capsule.
+The running service reads the updated catalog dynamically. The Qwen3 card advertises
+`"network": false` and `"tools": []` without a restart. A frontier adapter keeps current
+information and tool-dependent work when it sees these fields. The reusable client also rejects
+authority that the selected card does not advertise.
 
 ### Step 3: Ask through the local capsule
 
@@ -353,8 +358,8 @@ $ spewer ask "Compare the projected test results." --capsule qwen3-local --detac
 $ spewer check <task-id>
 ```
 
-The receipt records `engine.kind: ollama`, `model: qwen3:30b-a3b`, Ollama's version, token counts,
-and capsule revision.
+The receipt records Ollama, Qwen3, usage, and capsule evidence. The text view prints
+`not-reported` for omitted counts and `local-unpriced` without a local price configuration.
 
 ### Step 4: Keep the first local boundary honest
 

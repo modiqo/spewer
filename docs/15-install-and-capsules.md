@@ -27,6 +27,12 @@ A capsule without a skill binding advertises `generic`. Binding a valid `SKILL.m
 
 The persisted binding contains the skill name, description, content digest, revision, and canonical source file. Capability responses omit the local source path.
 
+Each public card also advertises `network` and `tools`. These fields describe the maximum authority
+the engine adapter can provide. A task request can narrow that authority but cannot expand it.
+
+The raw Ollama inference adapter advertises `network: false` and `tools: []`. Codex App Server
+advertises network support plus `commands` and `filesystem` tool categories.
+
 ## Capability lookup is live
 
 The running service reads the capsule catalog for every capability request. An adapter can therefore discover a new binding without reconnecting or regenerating code.

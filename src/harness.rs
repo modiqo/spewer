@@ -61,6 +61,7 @@ impl HarnessClient {
                     format!("capsule {capsule_id} is not advertised"),
                 )
             })?;
+        ensure_authority_supported(&request, &capsule)?;
         request.engine = capsule.engine.clone();
         request.capsule = Some(CapsuleRequest {
             id: capsule.id.clone(),
@@ -92,5 +93,72 @@ impl HarnessClient {
     /// Cancels queued or active work idempotently.
     pub async fn cancel(&self, task_id: String, reason: String) -> Result<CancelOutcome> {
         crate::control::cancel(self.socket.clone(), task_id, reason).await
+    }
+}
+
+fn ensure_authority_supported(request: &TaskRequest, capsule: &CapsuleAdvertisement) -> Result<()> {
+    if request.permissions.network == "allow" && !capsule.network {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!("capsule {} advertises network=false", capsule.id),
+        ));
+    }
+    if request.permissions.filesystem != "read-only"
+        && !capsule.tools.iter().any(|tool| tool == "filesystem")
+    {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!(
+                "capsule {} does not advertise a filesystem tool",
+                capsule.id
+            ),
+        ));
+    }
+    if request.permissions.commands == "allowlist"
+        && !capsule.tools.iter().any(|tool| tool == "commands")
+    {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!("capsule {} does not advertise a command tool", capsule.id),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_authority_supported;
+    use crate::capsule::{CapsuleAdvertisement, CapsuleKind};
+    use crate::protocol::{EngineRequest, TaskRequest};
+
+    #[test]
+    fn delegation_rejects_authority_missing_from_the_card() -> Result<(), serde_json::Error> {
+        let mut request: TaskRequest =
+            serde_json::from_str(include_str!("../tests/fixtures/task-request.json"))?;
+        let capsule = CapsuleAdvertisement {
+            id: "qwen3-local".to_owned(),
+            revision: "revision".to_owned(),
+            kind: CapsuleKind::Generic,
+            description: "Local inference".to_owned(),
+            engine: EngineRequest {
+                kind: "ollama".to_owned(),
+                model: "qwen3:30b-a3b".to_owned(),
+                effort: None,
+            },
+            network: false,
+            tools: Vec::new(),
+            skill: None,
+        };
+        request.permissions.network = "allow".to_owned();
+        assert!(ensure_authority_supported(&request, &capsule).is_err());
+        request.permissions.network = "deny".to_owned();
+        assert!(ensure_authority_supported(&request, &capsule).is_err());
+        request.permissions.filesystem = "read-only".to_owned();
+        request.permissions.writable_paths.clear();
+        request.permissions.commands = "allowlist".to_owned();
+        assert!(ensure_authority_supported(&request, &capsule).is_err());
+        request.permissions.commands = "engine-policy".to_owned();
+        assert!(ensure_authority_supported(&request, &capsule).is_ok());
+        Ok(())
     }
 }
