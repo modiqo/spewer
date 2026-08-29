@@ -71,6 +71,15 @@ pub(super) fn accept(
 
 pub(super) fn append(connection: &mut Connection, input: EventInput) -> Result<AppendOutcome> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let outcome = append_in(&transaction, input)?;
+    transaction.commit()?;
+    Ok(outcome)
+}
+
+pub(super) fn append_in(
+    transaction: &rusqlite::Transaction<'_>,
+    input: EventInput,
+) -> Result<AppendOutcome> {
     let projection_json: String = transaction
         .query_row(
             "SELECT projection_json FROM tasks WHERE task_id = ?1",
@@ -90,7 +99,6 @@ pub(super) fn append(connection: &mut Connection, input: EventInput) -> Result<A
             .optional()?;
         if let Some(json) = duplicate {
             let event = serde_json::from_str(&json)?;
-            transaction.commit()?;
             return Ok(AppendOutcome {
                 event,
                 projection: current,
@@ -113,7 +121,7 @@ pub(super) fn append(connection: &mut Connection, input: EventInput) -> Result<A
         source: input.source,
     };
     let projection = apply(&current, &event)?;
-    insert_event(&transaction, &event, input.source_key.as_deref())?;
+    insert_event(transaction, &event, input.source_key.as_deref())?;
     if let Some(source_key) = input.source_key {
         let source = event.source.as_ref().ok_or_else(|| {
             Error::new(
@@ -144,7 +152,6 @@ pub(super) fn append(connection: &mut Connection, input: EventInput) -> Result<A
             event.observed_at,
         ],
     )?;
-    transaction.commit()?;
     Ok(AppendOutcome {
         event,
         projection,
@@ -162,6 +169,18 @@ pub(super) fn get(connection: &Connection, task_id: &str) -> Result<Option<Proje
         .optional()?;
     json.map(|value| serde_json::from_str(&value).map_err(Error::from))
         .transpose()
+}
+
+pub(super) fn request(connection: &Connection, task_id: &str) -> Result<TaskRequest> {
+    let json = connection
+        .query_row(
+            "SELECT request_json FROM tasks WHERE task_id = ?1",
+            params![task_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "task does not exist"))?;
+    Ok(serde_json::from_str(&json)?)
 }
 
 pub(super) fn events_after(

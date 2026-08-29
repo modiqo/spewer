@@ -91,6 +91,31 @@ impl Workspace {
         })
     }
 
+    /// Reopens a retained isolated worktree after checkpoint validation.
+    pub async fn restore(
+        request: &TaskRequest,
+        projection: &crate::reducer::Projection,
+    ) -> Result<Self> {
+        let requested = PathBuf::from(&request.workspace.path);
+        let source_repository = blocking_path(move || std::fs::canonicalize(requested)).await?;
+        reject_broad_root(&source_repository)?;
+        let projected = PathBuf::from(&projection.workspace.path);
+        let path = blocking_path(move || std::fs::canonicalize(projected)).await?;
+        let artifacts_directory = data_root()?.join("artifacts");
+        let create = artifacts_directory.clone();
+        blocking_unit(move || {
+            std::fs::create_dir_all(create)?;
+            Ok(())
+        })
+        .await?;
+        Ok(Self {
+            source_repository,
+            path,
+            base_revision: projection.workspace.base_revision.clone(),
+            artifacts_directory,
+        })
+    }
+
     /// Captures a binary diff and rejects changes outside declared paths.
     pub async fn capture(&self, allowed_paths: &[String]) -> Result<WorkspaceEvidence> {
         git_status(&self.path, &["add", "--intent-to-add", "--all"]).await?;

@@ -14,8 +14,18 @@ enum CliCommand {
     DoctorCodex,
     RunCodex(PathBuf),
     Status(String),
-    Tail { task_id: String, after: u64 },
+    Tail {
+        task_id: String,
+        after: u64,
+    },
     Rebuild(String),
+    Resume(String),
+    Recover,
+    Outbox(String),
+    Acknowledge {
+        message_id: String,
+        consumer_id: String,
+    },
     Help,
     Version,
 }
@@ -32,6 +42,13 @@ pub async fn run() -> Result<()> {
         CliCommand::Status(task_id) => show_status(task_id).await?,
         CliCommand::Tail { task_id, after } => tail(task_id, after).await?,
         CliCommand::Rebuild(task_id) => rebuild(task_id).await?,
+        CliCommand::Resume(task_id) => resume(task_id).await?,
+        CliCommand::Recover => recover().await?,
+        CliCommand::Outbox(consumer_id) => outbox(consumer_id).await?,
+        CliCommand::Acknowledge {
+            message_id,
+            consumer_id,
+        } => acknowledge(message_id, consumer_id).await?,
         CliCommand::Help => print_help(),
         CliCommand::Version => println!("spewer {}", env!("CARGO_PKG_VERSION")),
     }
@@ -56,6 +73,16 @@ fn parse(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> Result<CliC
         Value(value) if value == "rebuild" => {
             parse_task_id(&mut parser, "rebuild").map(CliCommand::Rebuild)
         }
+        Value(value) if value == "resume" => {
+            parse_task_id(&mut parser, "resume").map(CliCommand::Resume)
+        }
+        Value(value) if value == "recover" => {
+            parse_no_arguments(&mut parser, "recover", CliCommand::Recover)
+        }
+        Value(value) if value == "outbox" => {
+            parse_task_id(&mut parser, "outbox").map(CliCommand::Outbox)
+        }
+        Value(value) if value == "ack" => parse_acknowledgement(&mut parser),
         Long("help") | Short('h') => Ok(CliCommand::Help),
         Long("version") | Short('V') => Ok(CliCommand::Version),
         Value(value) => Err(Error::new(
@@ -127,6 +154,45 @@ async fn run_task(path: PathBuf) -> Result<()> {
         "{}",
         serde_json::to_string(&json!({"receipt": result.receipt}))?
     );
+    if let Some(callback) = result.callback {
+        println!("{}", serde_json::to_string(&json!({"callback": callback}))?);
+    }
+    Ok(())
+}
+
+async fn resume(task_id: String) -> Result<()> {
+    let database = Database::open(Database::default_path()?).await?;
+    let report = crate::recovery::resume_codex(&database, task_id, CodexConfig::default()).await;
+    let close = database.close().await;
+    let result = report?;
+    println!("{}", serde_json::to_string_pretty(&result.receipt)?);
+    close?;
+    Ok(())
+}
+
+async fn recover() -> Result<()> {
+    let database = Database::open(Database::default_path()?).await?;
+    let tasks = database.nonterminal().await?;
+    database.close().await?;
+    println!("{}", serde_json::to_string_pretty(&tasks)?);
+    Ok(())
+}
+
+async fn outbox(consumer_id: String) -> Result<()> {
+    let database = Database::open(Database::default_path()?).await?;
+    let messages = database.pending(consumer_id).await?;
+    database.close().await?;
+    for message in messages {
+        println!("{}", serde_json::to_string(&message)?);
+    }
+    Ok(())
+}
+
+async fn acknowledge(message_id: String, consumer_id: String) -> Result<()> {
+    let database = Database::open(Database::default_path()?).await?;
+    let applied = database.acknowledge(message_id, consumer_id).await?;
+    database.close().await?;
+    println!("{}", serde_json::to_string(&json!({"applied": applied}))?);
     Ok(())
 }
 
@@ -205,6 +271,51 @@ fn parse_tail(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     Ok(CliCommand::Tail { task_id, after })
 }
 
+fn parse_no_arguments(
+    parser: &mut lexopt::Parser,
+    command: &str,
+    result: CliCommand,
+) -> Result<CliCommand> {
+    if parser
+        .next()
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
+        .is_some()
+    {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!("{command} accepts no arguments"),
+        ));
+    }
+    Ok(result)
+}
+
+fn parse_acknowledgement(parser: &mut lexopt::Parser) -> Result<CliCommand> {
+    let message_id = parser
+        .value()
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
+        .to_string_lossy()
+        .into_owned();
+    let consumer_id = parser
+        .value()
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
+        .to_string_lossy()
+        .into_owned();
+    if parser
+        .next()
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
+        .is_some()
+    {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "ack accepts two arguments",
+        ));
+    }
+    Ok(CliCommand::Acknowledge {
+        message_id,
+        consumer_id,
+    })
+}
+
 fn parse_doctor(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     let mut engine = None;
     while let Some(argument) = parser
@@ -242,7 +353,7 @@ fn parse_doctor(parser: &mut lexopt::Parser) -> Result<CliCommand> {
 
 fn print_help() {
     println!(
-        "spewer {}\n\nUSAGE:\n  spewer doctor --engine codex\n  spewer run <task.json> --engine codex\n  spewer status <task-id>\n  spewer tail <task-id> [--after <seq>]\n  spewer rebuild <task-id>\n  spewer --version",
+        "spewer {}\n\nUSAGE:\n  spewer doctor --engine codex\n  spewer run <task.json> --engine codex\n  spewer status <task-id>\n  spewer tail <task-id> [--after <seq>]\n  spewer rebuild <task-id>\n  spewer recover\n  spewer resume <task-id>\n  spewer outbox <consumer-id>\n  spewer ack <message-id> <consumer-id>\n  spewer --version",
         env!("CARGO_PKG_VERSION")
     );
 }

@@ -1,10 +1,13 @@
 //! Single-writer SQLite storage behind bounded commands.
 
+mod api;
 mod operations;
+mod records;
 mod schema;
 
+use crate::delivery::OutboxMessage;
 use crate::error::{Error, ErrorKind, Result};
-use crate::protocol::{Event, EventSource, TaskHandle, TaskRequest};
+use crate::protocol::{Checkpoint, Event, EventSource, Receipt, TaskHandle, TaskRequest};
 use crate::reducer::Projection;
 use rusqlite::Connection;
 use serde_json::Value;
@@ -57,6 +60,15 @@ pub struct AppendOutcome {
     pub inserted: bool,
 }
 
+/// Atomic terminal event, receipt, and callback result.
+#[derive(Clone, Debug)]
+pub struct FinalizeOutcome {
+    /// Terminal event append outcome.
+    pub append: AppendOutcome,
+    /// Stable callback stored in the same transaction.
+    pub message: OutboxMessage,
+}
+
 enum Command {
     Accept {
         request: Box<TaskRequest>,
@@ -72,6 +84,10 @@ enum Command {
         task_id: String,
         reply: oneshot::Sender<Result<Option<Projection>>>,
     },
+    Request {
+        task_id: String,
+        reply: oneshot::Sender<Result<TaskRequest>>,
+    },
     Events {
         task_id: String,
         after: u64,
@@ -80,6 +96,37 @@ enum Command {
     Rebuild {
         task_id: String,
         reply: oneshot::Sender<Result<Projection>>,
+    },
+    SaveCheckpoint {
+        checkpoint: Box<Checkpoint>,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    LatestCheckpoint {
+        task_id: String,
+        reply: oneshot::Sender<Result<Option<Checkpoint>>>,
+    },
+    Nonterminal {
+        reply: oneshot::Sender<Result<Vec<Projection>>>,
+    },
+    CommitReceipt {
+        receipt: Box<Receipt>,
+        mode: String,
+        reply: oneshot::Sender<Result<OutboxMessage>>,
+    },
+    Finalize {
+        input: Box<EventInput>,
+        receipt: Box<Receipt>,
+        mode: String,
+        reply: oneshot::Sender<Result<FinalizeOutcome>>,
+    },
+    Pending {
+        consumer_id: String,
+        reply: oneshot::Sender<Result<Vec<OutboxMessage>>>,
+    },
+    Acknowledge {
+        message_id: String,
+        consumer_id: String,
+        reply: oneshot::Sender<Result<bool>>,
     },
     Shutdown {
         reply: oneshot::Sender<Result<()>>,
@@ -199,6 +246,103 @@ impl Database {
         reply_rx.await.map_err(|_| closed())?
     }
 
+    /// Stores one named recovery boundary idempotently.
+    pub async fn save_checkpoint(&self, checkpoint: Checkpoint) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.sender
+            .send(Command::SaveCheckpoint {
+                checkpoint: Box::new(checkpoint),
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| closed())?;
+        reply_rx.await.map_err(|_| closed())?
+    }
+
+    /// Loads the latest checkpoint for one task.
+    pub async fn latest_checkpoint(&self, task_id: String) -> Result<Option<Checkpoint>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.sender
+            .send(Command::LatestCheckpoint {
+                task_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| closed())?;
+        reply_rx.await.map_err(|_| closed())?
+    }
+
+    /// Returns all tasks that need recovery reconciliation.
+    pub async fn nonterminal(&self) -> Result<Vec<Projection>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.sender
+            .send(Command::Nonterminal { reply: reply_tx })
+            .await
+            .map_err(|_| closed())?;
+        reply_rx.await.map_err(|_| closed())?
+    }
+
+    /// Atomically stores a receipt and stable callback message.
+    pub async fn commit_receipt(&self, receipt: Receipt, mode: String) -> Result<OutboxMessage> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.sender
+            .send(Command::CommitReceipt {
+                receipt: Box::new(receipt),
+                mode,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| closed())?;
+        reply_rx.await.map_err(|_| closed())?
+    }
+
+    /// Commits terminal event, receipt, and callback atomically.
+    pub async fn finalize(
+        &self,
+        input: EventInput,
+        receipt: Receipt,
+        mode: String,
+    ) -> Result<FinalizeOutcome> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.sender
+            .send(Command::Finalize {
+                input: Box::new(input),
+                receipt: Box::new(receipt),
+                mode,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| closed())?;
+        reply_rx.await.map_err(|_| closed())?
+    }
+
+    /// Returns messages not acknowledged by a consumer.
+    pub async fn pending(&self, consumer_id: String) -> Result<Vec<OutboxMessage>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.sender
+            .send(Command::Pending {
+                consumer_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| closed())?;
+        reply_rx.await.map_err(|_| closed())?
+    }
+
+    /// Records one parent acknowledgement idempotently.
+    pub async fn acknowledge(&self, message_id: String, consumer_id: String) -> Result<bool> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.sender
+            .send(Command::Acknowledge {
+                message_id,
+                consumer_id,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| closed())?;
+        reply_rx.await.map_err(|_| closed())?
+    }
+
     /// Stops the writer and joins its operating-system thread.
     pub async fn close(mut self) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -252,6 +396,9 @@ fn writer_thread(
             Command::Get { task_id, reply } => {
                 let _sent = reply.send(operations::get(&connection, &task_id));
             }
+            Command::Request { task_id, reply } => {
+                let _sent = reply.send(operations::request(&connection, &task_id));
+            }
             Command::Events {
                 task_id,
                 after,
@@ -261,6 +408,43 @@ fn writer_thread(
             }
             Command::Rebuild { task_id, reply } => {
                 let _sent = reply.send(operations::rebuild(&mut connection, &task_id));
+            }
+            Command::SaveCheckpoint { checkpoint, reply } => {
+                let _sent = reply.send(records::save_checkpoint(&connection, &checkpoint));
+            }
+            Command::LatestCheckpoint { task_id, reply } => {
+                let _sent = reply.send(records::latest_checkpoint(&connection, &task_id));
+            }
+            Command::Nonterminal { reply } => {
+                let _sent = reply.send(records::nonterminal(&connection));
+            }
+            Command::CommitReceipt {
+                receipt,
+                mode,
+                reply,
+            } => {
+                let _sent = reply.send(records::commit_receipt(&mut connection, &receipt, &mode));
+            }
+            Command::Finalize {
+                input,
+                receipt,
+                mode,
+                reply,
+            } => {
+                let result = records::finalize(&mut connection, *input, &receipt, &mode)
+                    .map(|(append, message)| FinalizeOutcome { append, message });
+                let _sent = reply.send(result);
+            }
+            Command::Pending { consumer_id, reply } => {
+                let _sent = reply.send(records::pending(&connection, &consumer_id));
+            }
+            Command::Acknowledge {
+                message_id,
+                consumer_id,
+                reply,
+            } => {
+                let _sent =
+                    reply.send(records::acknowledge(&connection, &message_id, &consumer_id));
             }
             Command::Shutdown { reply } => {
                 let result = connection

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "source": "example rates for tests only; replace with a dated provider source",
+  "effective_at": "2026-08-28T00:00:00Z",
+  "models": {
+    "fake-local": {
+      "input_per_million": 1.0,
+      "cached_input_per_million": 0.1,
+      "output_per_million": 2.0,
+      "reasoning_per_million": 2.0
+    }
+  }
+}

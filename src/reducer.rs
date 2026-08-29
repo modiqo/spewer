@@ -276,6 +276,9 @@ fn apply_turn_completed(next: &mut Projection, data: &Value) {
         Some("failed") => TaskStatus::Failed,
         _ => TaskStatus::Escalated,
     };
+    if let Some(wall_ms) = data.get("wall_ms").and_then(Value::as_u64) {
+        next.usage.wall_ms = wall_ms;
+    }
 }
 
 fn set_optional_u64(target: &mut Option<u64>, data: &Value, field: &str) {
@@ -303,9 +306,10 @@ mod tests {
             &event(
                 1,
                 "turn.completed",
-                serde_json::json!({"status":"completed"}),
+                serde_json::json!({"status":"completed","wall_ms":42}),
             ),
         )?;
+        assert_eq!(terminal.usage.wall_ms, 42);
         assert!(apply(&terminal, &event(2, "task.resumed", serde_json::json!({}))).is_err());
         Ok(())
     }

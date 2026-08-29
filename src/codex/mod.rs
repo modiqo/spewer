@@ -1,10 +1,12 @@
 //! Codex App Server integration.
 
 mod mapper;
+mod params;
 mod process;
 mod wire;
 
 pub use mapper::{NormalizedEvent, Normalizer};
+pub(crate) use params::{thread as thread_params, turn as turn_params};
 pub use process::{CodexClient, CodexConfig, CodexMessage};
 
 use crate::error::{Error, ErrorKind, Result};
