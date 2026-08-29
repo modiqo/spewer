@@ -4,6 +4,8 @@ This sequence starts with Spewer's purpose, fixes the public contracts, and ends
 
 Run the [README tutorial](../README.md) first. It gives you a working delegated task before these documents explain the machinery.
 
+Read [How Spewer works](how_it_works.md) for the current checkpoint. It joins the implemented system, planned capsule discovery, pluggable engines, and target user experience.
+
 ## Stage 1 fixes the product boundary
 
 Read these documents before changing what Spewer owns:
