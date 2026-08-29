@@ -13,7 +13,7 @@ The shortest useful path is three commands:
 ```console
 $ cargo install --path . --locked
 $ spewer install
-$ spewer ask "What is 17 multiplied by 19?" --text
+$ spewer ask "What is 17 multiplied by 19?"
 323
 ```
 
@@ -50,7 +50,7 @@ If Codex needs authentication, run `codex` once. Then repeat `spewer install`.
 Run a question and wait for its answer:
 
 ```console
-$ spewer ask "What is 17 multiplied by 19?" --text
+$ spewer ask "What is 17 multiplied by 19?"
 323
 ```
 
@@ -83,7 +83,7 @@ Cancel work you no longer need:
 $ spewer cancel <task-id> --reason "the parent no longer needs it"
 ```
 
-### 4. Add a local Qwen3 worker when you want one
+### 4. Run Qwen3 locally, then optionally add hosted search
 
 Ollama can serve the shipped Qwen3 reference model on your machine. Pull it explicitly because
 the model download is large:
@@ -99,24 +99,70 @@ Register the installed model as another capsule:
 $ spewer capsule add qwen3-local --engine ollama --model qwen3:30b-a3b
 ```
 
-The running service discovers the capsule without restarting. Ask through it directly:
+List ready capsules with `spewer capsule list`. List every locally installed Ollama model with
+`spewer doctor --engine ollama`. Pull another model before registering it:
 
 ```console
-$ spewer ask "What is 17 multiplied by 19?" --capsule qwen3-local --text
+$ ollama pull mistral
+$ spewer capsule add mistral-local --engine ollama --model mistral
+```
+
+Ollama stores that model as `mistral:latest`. Spewer resolves the shorter `mistral` name and stores
+the canonical installed name in the capsule.
+
+The running service discovers the capsule without restarting. Local inference needs no API key.
+Make Qwen3 the capsule used when `--capsule` is absent:
+
+```console
+$ spewer capsule default qwen3-local
+$ spewer ask "What is 17 multiplied by 19?"
 323
 ```
 
-Its capability card advertises `"network": false` and `"tools": []`. Frontier adapters can
-therefore keep live-data and tool-dependent work before they submit it.
+Without search configuration, its capability card advertises `"network": false` and
+`"tools": []`. Frontier adapters keep live-data work when they see those limits.
 
 Missing Ollama telemetry stays missing in receipts. The text view labels cached and reasoning
 counts as `not-reported`; an unpriced local run reports `cost=local-unpriced`.
 
-The CP18 Ollama worker performs read-only inference. It receives the objective, notes, projected
-files, acceptance criteria, and any bound skill. It rejects tasks that request commands or file
-writes.
+The Ollama worker remains read-only. It receives the objective, notes, projected files, acceptance
+criteria, and any bound skill. It rejects commands and file writes.
 
-The `default` Luna capsule remains available for work that needs the Codex agent tool loop.
+`OLLAMA_API_KEY` is not required for the local model. It authenticates Ollama's hosted search API.
+Set it only when this capsule should support current public information. Restart an older detached
+service from the same shell so it inherits that credential:
+
+```console
+$ spewer stop
+$ spewer serve --engine all
+$ spewer capabilities
+```
+
+The Qwen capsule now advertises `"network": true` and `"tools": ["web_search"]`. Inspect its
+human and machine-readable ask guidance:
+
+```console
+$ spewer capsule show
+```
+
+Grant network authority explicitly for a current-information question:
+
+```console
+$ spewer ask "What is the current weather in Sunnyvale, California?" \
+    --web
+```
+
+Qwen chooses the query. Spewer validates it, calls Ollama's hosted search API, returns up to five
+results, and records the tool call. Local inference stays on the machine; search queries and
+results cross the Ollama service boundary.
+
+The Luna capsule named `default` remains available for work that needs the Codex agent tool loop.
+Select it for one question with `--capsule default`, or restore it with
+`spewer capsule default default`.
+
+`--web` grants request authority only when the capsule advertises `web_search`. Plain attached
+questions print answer text and telemetry. Use `--json` for a structured receipt or `--detach` for
+a durable task handle. `spewer capsule show <id>` reports these choices for any installed capsule.
 
 ### 5. Delegate from Codex without changing harnesses
 
@@ -219,12 +265,14 @@ never converts missing price data into zero.
 | Reference Codex delegation skill | Implemented |
 | Complete durable Play adapter | Implemented |
 | Local Qwen3 inference through Ollama | Implemented in CP18 |
+| Bounded local-model web search | Implemented in CP19 |
+| Persisted default capsule and self-describing ask options | Implemented in CP20 |
 | Local-model command execution and file writes | Not implemented |
 | Native integrations for other frontier harnesses | Planned |
 | Distributed multi-machine workers | Not implemented |
 
 Inferred `spewer ask` tasks use read-only filesystem authority and deny network access by default.
-The service routes both Codex App Server and local Ollama capsules.
+`ask --web` is the explicit exception for a capsule that advertises `web_search`.
 
 ## Go deeper only when you need to
 
@@ -238,7 +286,7 @@ The service routes both Codex App Server and local Ollama capsules.
 - [Play integration](docs/10-play-integration.md) defines the first complete durable parent
   adapter.
 - [Design index](docs/readme.md) links every accepted contract and decision.
-- [Checkpoint evidence](artifacts/checkpoints) records the proof through CP18.
+- [Checkpoint evidence](artifacts/checkpoints) records passed proof through CP20.
 
 ## Build and verify Spewer
 

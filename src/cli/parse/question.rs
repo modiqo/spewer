@@ -26,8 +26,9 @@ pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     let mut question = None;
     let mut workspace = None;
     let mut capsule_id = None;
-    let mut text = false;
-    let mut json = false;
+    let mut web = false;
+    let mut text_requested = false;
+    let mut json_requested = false;
     let mut detach = false;
     let mut socket = None;
     while let Some(argument) = next(parser)? {
@@ -37,8 +38,9 @@ pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
             Long("capsule") => {
                 capsule_id = Some(value(parser)?.to_string_lossy().into_owned());
             }
-            Long("json") => json = true,
-            Long("text") => text = true,
+            Long("web") => web = true,
+            Long("json") => json_requested = true,
+            Long("text") => text_requested = true,
             Long("detach") => detach = true,
             Long("socket") => socket = Some(PathBuf::from(value(parser)?)),
             Value(value) if question.is_none() => {
@@ -51,13 +53,13 @@ pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     }
     let question = question
         .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "ask requires a quoted question"))?;
-    if json && text {
+    if json_requested && text_requested {
         return Err(Error::new(
             ErrorKind::InvalidInput,
             "ask accepts either --json or --text",
         ));
     }
-    if detach && text {
+    if detach && text_requested {
         return Err(Error::new(
             ErrorKind::InvalidInput,
             "detached ask always returns a JSON task handle",
@@ -69,10 +71,12 @@ pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
             "ask --socket requires --detach",
         ));
     }
+    let text = !detach && !json_requested;
     Ok(CliCommand::Ask {
         question,
         workspace,
         capsule_id,
+        web,
         text,
         detach,
         socket,

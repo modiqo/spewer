@@ -53,7 +53,7 @@ TASK STATE
 
 AGENT ROUTES
   First run:         install -> capabilities -> ask or delegate
-  Attached question: init -> ask -> read structured result
+  Attached question: init -> ask -> read answer
   Detached question: serve -> ask --detach -> observe -> result -> ack
   Start service:   doctor -> serve
   Delegate:        capabilities -> submit -> observe -> result -> ack
@@ -67,19 +67,22 @@ AGENT ROUTES
 COMMON FORMS
   spewer install                          Prepare Codex, capsule, and service.
   spewer capsule list                     Discover generic or specialized workers.
+  spewer capsule show [<id>]              Explain one capsule's ask options.
+  spewer capsule default <id>             Select the worker used by plain ask.
   spewer delegate <task.json>              Discover, bind, and submit one task.
   spewer check <task-id>                   Observe progress and retrieve its result.
   spewer init [--overwrite]             Create or replace private defaults.
-  spewer ask "<question>"                Wait and return structured JSON.
-  spewer ask "<question>" --text         Wait and print an answer-first view.
+  spewer ask "<question>"                Wait and print the answer with telemetry.
+  spewer ask "<question>" --json         Return the answer and receipt as JSON.
   spewer ask "<question>" --detach       Queue work and return a task handle.
   spewer ask "<question>" --capsule qwen3-local  Use a selected worker.
+  spewer ask "<question>" --capsule qwen3-local --web  Allow bounded web search.
   spewer serve --engine all             Start the service in the background.
   spewer serve --engine all --foreground  Keep the service attached.
 
 COMMANDS
   install  Prepare one ready detached Luna worker.
-  capsule  Add or list capsules, then bind or unbind a specialized skill.
+  capsule  Add, inspect, select, bind, or unbind a worker capsule.
   init     Write private defaults for inferred question tasks.
   ask      Ask one question through the configured model.
   doctor   Verify Codex App Server or local Ollama before run.
@@ -114,8 +117,8 @@ LEARN THE NEXT STEP
 const ASK: &str = r#"spewer ask - infer and run one bounded question task
 
 USAGE
-  spewer ask "<question>" [--workspace <path>] [--capsule <id>] [--json | --text]
-  spewer ask "<question>" --detach [--capsule <id>] [--socket <path>]
+  spewer ask "<question>" [--workspace <path>] [--capsule <id>] [--web] [--json | --text]
+  spewer ask "<question>" --detach [--capsule <id>] [--web] [--socket <path>]
 
 WHEN
   Use attached mode for one result. Use detach while 'spewer serve' is running.
@@ -125,17 +128,20 @@ STATE
   detached: question -> queued task handle -> persisted terminal receipt
 
 NEXT
-  Attached mode returns the complete result. Use '--text' for an answer-first view.
+  Attached mode prints the answer. Use '--json' for a structured result and receipt.
   Detached mode returns argument arrays for observe, result, and cancel.
+  '--web' grants network access and requires a capsule that advertises web_search.
+  Omit '--capsule' to use the configured default shown by 'spewer capsule show'.
 
 OUTPUT
-  Attached mode writes one JSON result to stdout and terminal progress to stderr.
-  Text mode writes the answer to stdout and telemetry to stderr.
+  Attached mode writes the answer to stdout and telemetry to stderr.
+  JSON mode writes one structured result to stdout and progress to stderr.
   Detached mode writes one JSON task handle without waiting for the selected worker.
 
 EXAMPLE
   spewer ask "What is 17 multiplied by 23?"
   spewer ask "Summarize this task" --capsule qwen3-local
+  spewer ask "What changed in Rust this week?" --capsule qwen3-local --web
   spewer ask "Inspect the parser tests" --detach
 "#;
 
@@ -455,10 +461,10 @@ mod tests {
 
     #[test]
     fn global_help_surfaces_common_modes() {
-        for flag in ["--overwrite", "--text", "--detach", "--foreground"] {
+        for flag in ["--overwrite", "--json", "--detach", "--foreground"] {
             assert!(GLOBAL.contains(flag), "missing {flag} from global help");
         }
-        assert!(GLOBAL.contains("Wait and return structured JSON"));
+        assert!(GLOBAL.contains("Wait and print the answer"));
         assert!(GLOBAL.contains("Start the service in the background"));
     }
 

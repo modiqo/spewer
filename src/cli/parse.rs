@@ -21,6 +21,8 @@ pub(super) enum CliCommand {
         skip_codex_install: bool,
     },
     CapsuleList,
+    CapsuleShow(Option<String>),
+    CapsuleDefault(String),
     CapsuleAdd {
         capsule_id: String,
         engine: String,
@@ -39,6 +41,7 @@ pub(super) enum CliCommand {
         question: String,
         workspace: Option<PathBuf>,
         capsule_id: Option<String>,
+        web: bool,
         text: bool,
         detach: bool,
         socket: Option<PathBuf>,

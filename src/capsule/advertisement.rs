@@ -37,8 +37,16 @@ pub(super) fn advertisement(manifest: &CapsuleManifest) -> Result<CapsuleAdverti
 }
 
 fn runtime_capabilities(engine: &str) -> (bool, Vec<String>) {
+    runtime_capabilities_for(engine, crate::ollama::web_search_configured())
+}
+
+pub(super) fn runtime_capabilities_for(
+    engine: &str,
+    ollama_search_configured: bool,
+) -> (bool, Vec<String>) {
     match engine {
         "codex-app-server" => (true, ["commands", "filesystem"].map(str::to_owned).into()),
+        "ollama" if ollama_search_configured => (true, vec!["web_search".to_owned()]),
         _ => (false, Vec::new()),
     }
 }

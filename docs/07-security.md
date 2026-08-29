@@ -51,6 +51,10 @@ Task requests reference named credentials without embedding values. A credential
 
 Logs, events, receipts, and artifacts run through redaction before persistence. Hashes help correlate repeated values without storing them directly.
 
+The optional Ollama search adapter reads `OLLAMA_API_KEY` from the Spewer process environment. It
+never copies the value into a task, capsule, event, receipt, error body, or artifact. Search
+redirects remain disabled so an authorization header cannot follow a different endpoint.
+
 ## Engine capabilities cannot expand task permissions
 
 The Codex adapter translates Spewer permissions into supported App Server settings. A missing engine control causes rejection or a stronger outer isolation boundary.

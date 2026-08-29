@@ -25,6 +25,8 @@ pub async fn run() -> Result<()> {
             skip_codex_install,
         } => setup::install(workspace, max_workers, skip_codex_install).await?,
         CliCommand::CapsuleList => setup::capsule_list()?,
+        CliCommand::CapsuleShow(capsule_id) => setup::capsule_show(capsule_id.as_deref())?,
+        CliCommand::CapsuleDefault(capsule_id) => setup::capsule_default(&capsule_id)?,
         CliCommand::CapsuleAdd {
             capsule_id,
             engine,
@@ -42,12 +44,13 @@ pub async fn run() -> Result<()> {
             question: prompt,
             workspace,
             capsule_id,
+            web,
             text,
             detach,
             socket,
         } => {
             Box::pin(question::ask(
-                prompt, workspace, capsule_id, text, detach, socket,
+                prompt, workspace, capsule_id, web, text, detach, socket,
             ))
             .await?;
         }

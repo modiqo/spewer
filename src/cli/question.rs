@@ -46,20 +46,72 @@ pub(super) async fn ask(
     question: String,
     workspace: Option<PathBuf>,
     capsule_id: Option<String>,
+    web: bool,
     text_output: bool,
     detach: bool,
     socket: Option<PathBuf>,
 ) -> Result<()> {
     let config = tokio::task::spawn_blocking(crate::config::LocalConfig::load).await??;
     let mut request = config.infer_question(&question, workspace)?;
-    if let Some(capsule_id) = capsule_id {
-        select_capsule(&mut request, &capsule_id)?;
+    let capsule_id = match capsule_id {
+        Some(capsule_id) => capsule_id,
+        None => config.default_capsule.clone(),
+    };
+    let detached_socket = if detach {
+        Some(match socket {
+            Some(path) => path,
+            None => crate::control::default_socket_path()?,
+        })
+    } else {
+        None
+    };
+    let selected = match detached_socket.as_ref() {
+        Some(socket) => select_service_capsule(&mut request, &capsule_id, socket).await?,
+        None => select_capsule(&mut request, &capsule_id)?,
+    };
+    if web {
+        if !selected.network || !selected.tools.iter().any(|tool| tool == "web_search") {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "capsule {} does not advertise web_search; set OLLAMA_API_KEY before starting Spewer",
+                    selected.id
+                ),
+            ));
+        }
+        "allow".clone_into(&mut request.permissions.network);
     }
+    request.validate()?;
     if detach {
         "poll".clone_into(&mut request.callback.mode);
-        return submit_detached(request, socket).await;
+        return submit_detached(request, detached_socket).await;
     }
     Box::pin(run_attached(request, text_output)).await
+}
+
+async fn select_service_capsule(
+    request: &mut TaskRequest,
+    capsule_id: &str,
+    socket: &std::path::Path,
+) -> Result<crate::capsule::CapsuleAdvertisement> {
+    let capabilities = crate::control::capabilities(socket.to_owned()).await?;
+    let capsule = capabilities
+        .capsules
+        .into_iter()
+        .find(|capsule| capsule.id == capsule_id)
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("capsule {capsule_id} is not advertised by the service"),
+            )
+        })?;
+    request.engine = capsule.engine.clone();
+    request.capsule = Some(crate::capsule::CapsuleRequest {
+        id: capsule.id.clone(),
+        revision: capsule.revision.clone(),
+        binding: None,
+    });
+    Ok(capsule)
 }
 
 async fn run_attached(request: TaskRequest, text_output: bool) -> Result<()> {
@@ -106,7 +158,10 @@ async fn run_attached(request: TaskRequest, text_output: bool) -> Result<()> {
     closed
 }
 
-fn select_capsule(request: &mut TaskRequest, capsule_id: &str) -> Result<()> {
+fn select_capsule(
+    request: &mut TaskRequest,
+    capsule_id: &str,
+) -> Result<crate::capsule::CapsuleAdvertisement> {
     let catalog = crate::capsule::catalog()?;
     let capsule = catalog
         .capsules
@@ -120,8 +175,7 @@ fn select_capsule(request: &mut TaskRequest, capsule_id: &str) -> Result<()> {
         })?;
     request.engine = capsule.engine.clone();
     request.capsule = Some(crate::capsule::select(capsule_id)?);
-    request.validate()?;
-    Ok(())
+    Ok(capsule.clone())
 }
 
 async fn submit_detached(request: TaskRequest, socket: Option<PathBuf>) -> Result<()> {

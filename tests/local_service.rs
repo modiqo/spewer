@@ -228,7 +228,14 @@ fn ask_initializes_infers_answers_and_acknowledges() -> Result<(), Box<dyn std::
 
     let asked = run_cli(&home, &fake, &["ask", "What is two plus two?"])?;
     ensure_success(&asked, "ask")?;
-    let asked_json: serde_json::Value = serde_json::from_slice(&asked.stdout)?;
+    assert!(String::from_utf8(asked.stdout)?.contains("Local service completed the turn."));
+    let telemetry = String::from_utf8(asked.stderr)?;
+    assert!(telemetry.contains("model=gpt-5.6-luna"));
+    assert!(telemetry.contains("output=7"));
+
+    let asked_json = run_cli(&home, &fake, &["ask", "What is two plus two?", "--json"])?;
+    ensure_success(&asked_json, "ask json")?;
+    let asked_json: serde_json::Value = serde_json::from_slice(&asked_json.stdout)?;
     assert_eq!(
         asked_json.get("answer").and_then(serde_json::Value::as_str),
         Some("Local service completed the turn.")
@@ -239,13 +246,12 @@ fn ask_initializes_infers_answers_and_acknowledges() -> Result<(), Box<dyn std::
             .and_then(serde_json::Value::as_str),
         Some(DEFAULT_MODEL)
     );
-
-    let asked_text = run_cli(&home, &fake, &["ask", "What is two plus two?", "--text"])?;
-    ensure_success(&asked_text, "ask text")?;
-    assert!(String::from_utf8(asked_text.stdout)?.contains("Local service completed the turn."));
-    let telemetry = String::from_utf8(asked_text.stderr)?;
-    assert!(telemetry.contains("model=gpt-5.6-luna"));
-    assert!(telemetry.contains("output=7"));
+    assert_eq!(
+        asked_json
+            .pointer("/receipt/capsule/id")
+            .and_then(serde_json::Value::as_str),
+        Some("default")
+    );
 
     let outbox = run_cli(&home, &fake, &["outbox", "spewer-ask"])?;
     ensure_success(&outbox, "ask outbox")?;

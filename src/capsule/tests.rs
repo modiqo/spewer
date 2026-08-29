@@ -102,11 +102,25 @@ fn additional_capsule_is_created_once() -> Result<()> {
                 "Qwen capsule is missing",
             )
         })?;
-    assert!(!qwen.network);
-    assert!(qwen.tools.is_empty());
+    assert_eq!(qwen.network, crate::ollama::web_search_configured());
+    if qwen.network {
+        assert_eq!(qwen.tools, ["web_search"]);
+    } else {
+        assert!(qwen.tools.is_empty());
+    }
     assert!(create_at(&root, "qwen3-local", "Duplicate".to_owned(), engine).is_err());
     std::fs::remove_dir_all(root)?;
     Ok(())
+}
+
+#[test]
+fn ollama_search_capability_requires_runtime_configuration() {
+    let (network, tools) = super::advertisement::runtime_capabilities_for("ollama", false);
+    assert!(!network);
+    assert!(tools.is_empty());
+    let (network, tools) = super::advertisement::runtime_capabilities_for("ollama", true);
+    assert!(network);
+    assert_eq!(tools, ["web_search"]);
 }
 
 #[cfg(unix)]

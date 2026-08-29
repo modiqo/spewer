@@ -14,7 +14,7 @@ fn executable_help_teaches_the_global_and_command_routes() -> Result<(), Box<dyn
     assert!(global.contains("COMMON FORMS\n"));
     assert!(global.contains("doctor -> serve"));
     assert!(global.contains("capabilities -> submit -> observe -> result -> ack"));
-    for flag in ["--overwrite", "--text", "--detach", "--foreground"] {
+    for flag in ["--overwrite", "--json", "--detach", "--foreground"] {
         assert!(global.contains(flag), "missing {flag} from global help");
     }
 

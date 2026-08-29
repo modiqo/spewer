@@ -29,26 +29,32 @@ pub(super) const CAPSULE: &str = r"spewer capsule - add, discover, or specialize
 USAGE
   spewer capsule add <capsule-id> --engine ollama --model <name>
   spewer capsule list
+  spewer capsule show [<capsule-id>]
+  spewer capsule default <capsule-id>
   spewer capsule bind <capsule-id> <skill-or-directory>
   spewer capsule unbind <capsule-id>
 
 WHEN
-  Add an installed Ollama model once. List before routing. Bind a valid SKILL.md to specialize a capsule.
+  Add an installed Ollama model once. Show its ask flags. Select a default or bind a skill.
 
 STATE
   add: installed Ollama model -> generic capsule
+  show: capsule -> supported ask flags and examples
+  default: installed capsule -> default for plain ask
   bind: generic capsule -> specialized capsule
   unbind: specialized capsule -> generic capsule
   list: no state change
 
 NEXT
-  Use 'spewer capabilities' from a running adapter to observe the same live catalog.
+  Use 'spewer capabilities' to verify the detached service sees the same live catalog.
 
 OUTPUT
-  One JSON catalog or one changed manifest. Local skill source paths only appear in administration output.
+  JSON describes the catalog, selected capsule, ask guidance, or changed manifest.
 
 EXAMPLE
   spewer capsule add qwen3-local --engine ollama --model qwen3:30b-a3b
+  spewer capsule default qwen3-local
+  spewer capsule show
   spewer capsule bind default ./skills/code-review
   spewer capsule list
 ";

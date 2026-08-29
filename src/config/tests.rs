@@ -1,4 +1,4 @@
-use super::{LocalConfig, write_new, write_replace};
+use super::{LocalConfig, set_default_capsule_at, write_new, write_replace};
 use crate::error::{Error, ErrorKind, Result};
 use crate::protocol::DEFAULT_MODEL;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,7 @@ fn config_is_private_read_only_and_replacement_is_guarded() -> Result<()> {
     let config = LocalConfig::defaults(root.clone())?;
     write_new(&path, &config)?;
     let loaded = LocalConfig::load_from(&path)?;
+    assert_eq!(loaded.default_capsule, "default");
     let request = loaded.infer_question("What is two plus two?", None)?;
     assert_eq!(request.engine.model, DEFAULT_MODEL);
     assert_eq!(request.permissions.filesystem, "read-only");
@@ -27,6 +28,28 @@ fn config_is_private_read_only_and_replacement_is_guarded() -> Result<()> {
         write_replace(&path, &config, &digest),
         Err(error) if error.kind() == ErrorKind::InvalidInput
     ));
+    assert_private(&path)?;
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
+fn older_config_defaults_and_selection_replaces_atomically() -> Result<()> {
+    let root = temporary("capsule-default")?;
+    std::fs::create_dir_all(&root)?;
+    let path = root.join(".spewer/config.json");
+    let config = LocalConfig::defaults(root.clone())?;
+    let mut value = serde_json::to_value(&config)?;
+    value
+        .as_object_mut()
+        .ok_or_else(|| Error::new(ErrorKind::Json, "config is not an object"))?
+        .remove("default_capsule");
+    let legacy: LocalConfig = serde_json::from_value(value)?;
+    assert_eq!(legacy.default_capsule, "default");
+    write_new(&path, &legacy)?;
+    let selected = set_default_capsule_at(&path, "qwen3-local")?;
+    assert_eq!(selected.default_capsule, "qwen3-local");
+    assert_eq!(LocalConfig::load_from(&path)?, selected);
     assert_private(&path)?;
     std::fs::remove_dir_all(root)?;
     Ok(())

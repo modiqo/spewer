@@ -71,6 +71,7 @@ fn parses_execution_commands() -> Result<(), Box<dyn std::error::Error>> {
             question: "What is two plus two?".to_owned(),
             workspace: None,
             capsule_id: None,
+            web: false,
             text: false,
             detach: true,
             socket: Some(PathBuf::from("/tmp/spewer.sock")),
@@ -98,6 +99,23 @@ fn parses_execution_commands() -> Result<(), Box<dyn std::error::Error>> {
             path: PathBuf::from("task.json"),
             socket: None,
         }
+    );
+    Ok(())
+}
+
+#[test]
+fn parses_capsule_selection_commands() -> Result<(), Box<dyn std::error::Error>> {
+    assert_eq!(
+        parse(args(&["capsule", "show"]))?,
+        CliCommand::CapsuleShow(None)
+    );
+    assert_eq!(
+        parse(args(&["capsule", "show", "qwen3-local"]))?,
+        CliCommand::CapsuleShow(Some("qwen3-local".to_owned()))
+    );
+    assert_eq!(
+        parse(args(&["capsule", "default", "qwen3-local"]))?,
+        CliCommand::CapsuleDefault("qwen3-local".to_owned())
     );
     Ok(())
 }
@@ -147,6 +165,24 @@ fn parses_ollama_commands() -> Result<(), Box<dyn std::error::Error>> {
             question: "What is two plus two?".to_owned(),
             workspace: None,
             capsule_id: Some("qwen3-local".to_owned()),
+            web: false,
+            text: true,
+            detach: false,
+            socket: None,
+        }
+    );
+    assert_eq!(
+        parse(args(&[
+            "ask",
+            "What is the current weather?",
+            "--web",
+            "--json",
+        ]))?,
+        CliCommand::Ask {
+            question: "What is the current weather?".to_owned(),
+            workspace: None,
+            capsule_id: None,
+            web: true,
             text: false,
             detach: false,
             socket: None,

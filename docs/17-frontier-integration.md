@@ -25,8 +25,12 @@ read-only routing step before delegation.
 ## The reference skill teaches the ownership boundary
 
 The `spewer-delegation` skill applies to bounded, checkable work that can run independently. It
-tells the frontier model to inspect `network` and `tools` before choosing a capsule. The frontier
-retains live-data work, ambiguous judgment, user communication, and the final answer.
+tells the frontier model to inspect `network` and `tools` before choosing a capsule.
+
+The frontier retains live-data work when a capsule reports `network: false` or omits the required
+tool. It may delegate current-information work when the card advertises `web_search` and the task
+explicitly grants network access. Ambiguous judgment, user communication, and the final answer
+remain with the frontier.
 
 The skill uses the CLI projection so Codex can exercise the same client contract without a custom in-process extension. Other harnesses can call the Rust client directly or project the same operations into native tools.
 

@@ -1,4 +1,4 @@
-# Fifteen checkpoints turn the design into testable increments
+# Checkpoints turn the design into testable increments
 
 Status: **Accepted**
 
@@ -279,7 +279,7 @@ Store packets under `artifacts/checkpoints/CP<N>/`. Do not commit secrets or raw
 - The configuration records the default workspace, engine, model, permissions, and ask budgets.
 - `spewer ask <question>` infers a complete task request from the configuration.
 - Attached ask returns one structured result and shows live status on terminal standard error.
-- `--text` selects an answer-first human view with compact telemetry.
+- Attached ask prints an answer-first view; `--json` selects the structured receipt.
 - `--detach` submits through the local service and returns a durable task handle immediately.
 - `spewer serve` starts the service in the background and returns JSON after the control socket is ready.
 - `spewer serve --foreground` keeps the invoking process attached for debugging and external supervision.
@@ -364,7 +364,6 @@ CP13 is complete.
 
 **Exit gate:** Crash, restart, adapter conformance, quality, and local end-to-end evidence pass in one CP14 packet.
 
-CP14 is complete. Its hard-crash, Play adapter, full quality, and live Luna evidence are recorded under `artifacts/checkpoints/CP14/README.md` in the Spewer repository.
 
 ## CP15 makes a useful worker one command away
 
@@ -392,16 +391,6 @@ CP14 is complete. Its hard-crash, Play adapter, full quality, and live Luna evid
 
 **Exit gate:** Unit, CLI, capability lookup, private-file, quality, and local end-to-end evidence pass in one CP15 packet.
 
-CP15 is complete. Its one-command installation, capsule lifecycle, dynamic lookup, quality-gate, and live Codex handshake evidence are recorded under `artifacts/checkpoints/CP15/README.md`.
-
-## The next adoption checkpoints remove the remaining aspirations
-
-- **CP16 — capsule-aware dispatch:** bind task acceptance to a capsule and advertised skill revision, then record that evidence in attempts and receipts.
-- **CP17 — frontier integration kit:** ship the three-tool integration skill, reusable adapter client, durable inbox primitives, and conformance fixtures.
-- **CP18 — second production worker:** implement an OpenCode or local open-weights engine package through the accepted engine adapter contract.
-- **CP19 — evidence-guided moderation:** add verifier and frontier-acceptance evidence, explicit routing policy, and the complete install-to-delegation flow.
-
-Only one checkpoint is active at a time. Later checkpoint detail becomes normative when that checkpoint opens.
 
 ## CP16 binds execution to one capsule revision
 
@@ -429,7 +418,6 @@ Only one checkpoint is active at a time. Later checkpoint detail becomes normati
 
 **Exit gate:** Protocol, stale-binding, prompt, receipt, recovery, compatibility, and end-to-end tests pass in one CP16 packet.
 
-CP16 is complete. Its capsule-selection, immutable skill snapshot, prompt, receipt, stale-binding, compatibility, and end-to-end evidence are recorded under `artifacts/checkpoints/CP16/README.md`.
 
 ## CP17 gives frontier harnesses one small integration surface
 
@@ -457,7 +445,6 @@ CP16 is complete. Its capsule-selection, immutable skill snapshot, prompt, recei
 
 **Exit gate:** Client, CLI, skill validation, installation, conformance, help, quality, and end-to-end tests pass in one CP17 packet.
 
-CP17 is complete. Its reusable harness client, three-action CLI, reference Codex skill, conflict-safe installation, help, conformance, and end-to-end evidence are recorded under `artifacts/checkpoints/CP17/README.md`.
 
 ## CP18 adds a production local Qwen3 worker
 
@@ -487,6 +474,27 @@ CP17 is complete. Its reusable harness client, three-action CLI, reference Codex
 
 **Exit gate:** Adapter, prompt, capsule, service, compatibility, quality, and live local end-to-end evidence pass in one CP18 packet.
 
-CP18 is complete. Its Ollama adapter, local Qwen3 capsule flow, dual-engine service routing,
-read-only authority boundary, live generic and specialized runs, and quality evidence are recorded
-under `artifacts/checkpoints/CP18/README.md`.
+## CP19 gives local models bounded web search
+
+**Objective:** Let an Ollama model search without changing public task or receipt schemas.
+The [web-search reference](19-bounded-web-search.md) defines scope, limits, events, and tests.
+**Exit gate:** Adapter, security, CLI, compatibility, quality, and live evidence pass together.
+CP19 is complete. Automated evidence and the user-confirmed live search are under `artifacts/checkpoints/CP19/README.md`.
+
+## CP20 makes plain ask capsule-aware
+
+**Objective:** Make the common question path simple without silently granting network authority.
+CP20 is complete. Its evidence is under `artifacts/checkpoints/CP20/README.md`.
+
+## CP21 resolves Ollama's implicit latest tag
+
+**Objective:** Accept Ollama's untagged model shorthand without storing an ambiguous capsule model.
+
+**Acceptance:**
+
+- `mistral` resolves to an installed `mistral:latest`.
+- New capsules store the canonical installed model name.
+- Explicit tags still require an exact installed match.
+- Missing models retain an actionable error.
+
+**Exit gate:** Resolution, capsule creation, live discovery, compatibility, and quality evidence pass. CP21 is complete under `artifacts/checkpoints/CP21/README.md`.

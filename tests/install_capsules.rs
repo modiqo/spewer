@@ -56,6 +56,8 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
     let installed: serde_json::Value = serde_json::from_slice(&installed.stdout)?;
     assert_install_report(&installed, true, true, "generic")?;
 
+    assert_capsule_guidance(&home, &fake)?;
+
     let before = capabilities(&home, &fake)?;
     let before_revision = before
         .get("capsule_revision")
@@ -137,6 +139,27 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
     wait_removed(&home.join("spewer.sock"))?;
     std::fs::remove_dir_all(root)?;
     Ok(())
+}
+
+fn assert_capsule_guidance(home: &Path, fake: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let shown = run_cli(home, fake, &["capsule", "show"])?;
+    ensure_success(&shown, "capsule show")?;
+    let shown: serde_json::Value = serde_json::from_slice(&shown.stdout)?;
+    assert_eq!(shown.get("default"), Some(&serde_json::Value::Bool(true)));
+    assert_eq!(
+        shown
+            .pointer("/ask/command/2")
+            .and_then(serde_json::Value::as_str),
+        Some("<question>")
+    );
+    assert_eq!(
+        shown
+            .pointer("/ask/output/default")
+            .and_then(serde_json::Value::as_str),
+        Some("answer text plus telemetry")
+    );
+    let selected = run_cli(home, fake, &["capsule", "default", "default"])?;
+    ensure_success(&selected, "capsule default")
 }
 
 fn assert_default_runtime_capabilities(capabilities: &serde_json::Value) {

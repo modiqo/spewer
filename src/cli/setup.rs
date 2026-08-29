@@ -78,6 +78,91 @@ pub(super) fn capsule_list() -> Result<()> {
     Ok(())
 }
 
+pub(super) fn capsule_show(capsule_id: Option<&str>) -> Result<()> {
+    let config = crate::config::LocalConfig::load()?;
+    let capsule_id = match capsule_id {
+        Some(capsule_id) => capsule_id,
+        None => &config.default_capsule,
+    };
+    let catalog = crate::capsule::catalog()?;
+    let capsule = catalog
+        .capsules
+        .iter()
+        .find(|capsule| capsule.id == capsule_id)
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("capsule {capsule_id} is not installed"),
+            )
+        })?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&capsule_guidance(capsule, &config.default_capsule))?
+    );
+    Ok(())
+}
+
+pub(super) fn capsule_default(capsule_id: &str) -> Result<()> {
+    let catalog = crate::capsule::catalog()?;
+    let capsule = catalog
+        .capsules
+        .iter()
+        .find(|capsule| capsule.id == capsule_id)
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("capsule {capsule_id} is not installed"),
+            )
+        })?;
+    let config = crate::config::set_default_capsule(capsule_id)?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&capsule_guidance(capsule, &config.default_capsule))?
+    );
+    Ok(())
+}
+
+fn capsule_guidance(
+    capsule: &crate::capsule::CapsuleAdvertisement,
+    default_capsule: &str,
+) -> serde_json::Value {
+    let is_default = capsule.id == default_capsule;
+    let mut ask = vec!["spewer", "ask", "<question>"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if !is_default {
+        ask.extend(["--capsule".to_owned(), capsule.id.clone()]);
+    }
+    let web_available = capsule.network && capsule.tools.iter().any(|tool| tool == "web_search");
+    let web_example = web_available.then(|| {
+        let mut command = ask.clone();
+        command.push("--web".to_owned());
+        command
+    });
+    json!({
+        "default": is_default,
+        "capability_source": "current process",
+        "capsule": capsule,
+        "ask": {
+            "command": ask,
+            "request_authority": {
+                "--web": {
+                    "available": web_available,
+                    "meaning": "allow this task to use the advertised web_search tool"
+                }
+            },
+            "output": {
+                "default": "answer text plus telemetry",
+                "--json": "structured answer and receipt",
+                "--detach": "durable task handle"
+            },
+            "web_example": web_example
+        },
+        "detached_service_check": ["spewer", "capabilities"]
+    })
+}
+
 pub(super) async fn capsule_add(capsule_id: &str, engine: &str, model: &str) -> Result<()> {
     if engine != crate::ollama::ENGINE_KIND {
         return Err(Error::new(
@@ -85,14 +170,19 @@ pub(super) async fn capsule_add(capsule_id: &str, engine: &str, model: &str) -> 
             "CP18 capsule add supports --engine ollama",
         ));
     }
-    let _doctor =
-        crate::ollama::doctor(crate::ollama::OllamaConfig::default(), Some(model)).await?;
+    let doctor = crate::ollama::doctor(crate::ollama::OllamaConfig::default(), Some(model)).await?;
+    let resolved_model = doctor.required_model.ok_or_else(|| {
+        Error::new(
+            ErrorKind::EngineProtocol,
+            "Ollama discovery omitted the required model",
+        )
+    })?;
     let manifest = crate::capsule::create(
         capsule_id,
-        format!("Read-only local inference through Ollama model {model}"),
+        format!("Read-only local inference through Ollama model {resolved_model}"),
         crate::protocol::EngineRequest {
             kind: engine.to_owned(),
-            model: model.to_owned(),
+            model: resolved_model,
             effort: None,
         },
     )?;

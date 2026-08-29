@@ -16,6 +16,7 @@ serde_json = "=1.0.151"
 sha2 = { version = "=0.11.0", default-features = false }
 time = { version = "=0.3.55", default-features = false, features = ["formatting", "std"] }
 tokio = { version = "=1.53.1", default-features = false, features = ["io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
+ureq = { version = "=3.4.0", default-features = false, features = ["json", "rustls"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.31.3", default-features = false, features = ["process", "signal"] }

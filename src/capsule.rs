@@ -109,7 +109,11 @@ pub struct CapsuleCatalog {
 
 /// Creates an unbound selection from the current catalog.
 pub fn select(capsule_id: &str) -> Result<CapsuleRequest> {
-    binding::select_at(&catalog_root()?, capsule_id)
+    let root = catalog_root()?;
+    if capsule_id == DEFAULT_CAPSULE {
+        let _default = ensure_default_at(&root)?;
+    }
+    binding::select_at(&root, capsule_id)
 }
 
 pub(crate) fn resolve_external_request(request: &mut crate::protocol::TaskRequest) -> Result<()> {

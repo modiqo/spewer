@@ -23,6 +23,9 @@ Repeating installation preserves an existing configuration and reuses a ready se
 
 The first installation has one capsule named `default`. Its engine is Codex App Server and its model is `gpt-5.6-luna`.
 
+Local configuration separately records which capsule plain `spewer ask` selects. The initial value
+is `default`; `spewer capsule default <id>` changes it without renaming any capsule.
+
 A capsule without a skill binding advertises `generic`. Binding a valid `SKILL.md` changes the same capsule to `specialized`. Unbinding the skill restores `generic`; it does not delete the capsule or engine configuration.
 
 The persisted binding contains the skill name, description, content digest, revision, and canonical source file. Capability responses omit the local source path.
@@ -30,8 +33,13 @@ The persisted binding contains the skill name, description, content digest, revi
 Each public card also advertises `network` and `tools`. These fields describe the maximum authority
 the engine adapter can provide. A task request can narrow that authority but cannot expand it.
 
-The raw Ollama inference adapter advertises `network: false` and `tools: []`. Codex App Server
-advertises network support plus `commands` and `filesystem` tool categories.
+The Ollama adapter advertises `network: false` and `tools: []` without search configuration. It
+advertises `network: true` and `tools: ["web_search"]` when its process has `OLLAMA_API_KEY`.
+
+Codex App Server advertises network support plus `commands` and `filesystem` tool categories.
+
+`capsule add` verifies Ollama models before writing. An untagged name such as `mistral` resolves to
+an installed `mistral:latest`; an explicit tag must match exactly.
 
 ## Capability lookup is live
 
@@ -49,11 +57,15 @@ The stable control protocol and the live catalog have separate lifecycles:
 ```text
 spewer install [--workspace <path>] [--max-workers <count>]
 spewer capsule list
+spewer capsule show [<capsule-id>]
+spewer capsule default <capsule-id>
 spewer capsule bind <capsule-id> <skill-or-directory>
 spewer capsule unbind <capsule-id>
 ```
 
-`capsule list` emits the same public catalog shape that appears in service capabilities. Bind and unbind are explicit local administration operations; model-facing plugins only need discovery, delegation, checking, and cancellation.
+`capsule list` emits the public catalog. `capsule show` adds CLI guidance without changing the
+service protocol. Model-facing plugins still need only discovery, delegation, checking, and
+cancellation.
 
 ## Security and failure behavior
 

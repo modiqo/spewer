@@ -19,9 +19,10 @@ model discovery, usage notifications, and resumption. Spewer adds durable superv
 instead of recreating those features.
 
 The second production adapter connects to a loopback Ollama server. It discovers the live Ollama
-version and installed local models, sends one bounded prompt, and maps the answer and token counts
-into the same provider-neutral event stream. Its first capability boundary is deliberately smaller:
-read-only inference without tools, writes, or resumption.
+version and installed local models, sends a bounded prompt, and normalizes answers and token counts.
+
+CP19 adds an optional `web_search` loop when the task allows network access and the Spewer process
+has `OLLAMA_API_KEY`. The adapter still rejects commands, writes, approvals, and resumption.
 
 ## The fake engine proves the seam
 
@@ -38,5 +39,5 @@ events. It may report zero provider charge only when a versioned price source sa
 cost stays unknown. Wall time and available token counts remain evidence in the receipt.
 
 The adapter rejects unsupported command, write, resumption, and approval requirements before
-dispatch. It does not silently weaken the task's authority. Adding an agent tool loop later should
-extend this adapter contract, not bypass it.
+dispatch. It does not silently weaken the task's authority. Its search loop uses the same finite
+event contract instead of bypassing it.

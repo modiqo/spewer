@@ -2,6 +2,8 @@
 
 mod http;
 mod prompt;
+mod search;
+mod tool;
 
 use crate::engine::{EngineAdapter, EngineCapabilities, EngineEvent, negotiate};
 use crate::error::{Error, ErrorKind, Result};
@@ -10,11 +12,20 @@ use crate::util::sha256;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::time::Duration;
+use tool::{
+    MAX_WEB_SEARCH_CALLS, ToolCall, ToolExecution, WEB_SEARCH_TOOL, parse_web_search_call,
+    web_search_tool,
+};
 
 /// Engine discriminator stored in capsule manifests and task requests.
 pub const ENGINE_KIND: &str = "ollama";
 /// Qwen3 model used by the CP18 reference capsule.
 pub const DEFAULT_QWEN_MODEL: &str = "qwen3:30b-a3b";
+
+/// Whether this process can authenticate Ollama hosted web search.
+pub(crate) fn web_search_configured() -> bool {
+    search::is_configured()
+}
 
 /// Connection settings for one local Ollama server.
 #[derive(Clone, Debug)]
@@ -55,6 +66,7 @@ pub struct OllamaDoctorReport {
 #[derive(Clone, Debug)]
 pub struct OllamaEngine {
     client: http::HttpClient,
+    search: Option<search::SearchClient>,
     capabilities: EngineCapabilities,
     version: String,
     prompt: String,
@@ -75,11 +87,19 @@ impl OllamaEngine {
             Duration::from_secs(request.budgets.wall_seconds),
         )?;
         let prompt = prompt::build(request, workspace).await?;
+        let search =
+            search::SearchClient::from_env(Duration::from_secs(request.budgets.wall_seconds))?;
+        let mut models = report.models;
+        if !models.iter().any(|model| model == &request.engine.model) {
+            models.push(request.engine.model.clone());
+            models.sort();
+        }
         Ok(Self {
             client,
+            search,
             capabilities: EngineCapabilities {
                 kind: ENGINE_KIND.to_owned(),
-                models: report.models,
+                models,
                 resumable: false,
                 usage: true,
             },
@@ -93,37 +113,98 @@ impl OllamaEngine {
         &self.version
     }
 
-    async fn chat(&self, request: &TaskRequest) -> Result<ChatResponse> {
+    async fn chat(&self, request: &TaskRequest) -> Result<ConversationResponse> {
         let num_predict = request.budgets.tokens.min(32_768);
-        let body = json!({
-            "model": request.engine.model,
-            "messages": [{"role": "user", "content": self.prompt}],
-            "stream": false,
-            "think": false,
-            "keep_alive": "5m",
-            "options": {"num_predict": num_predict}
-        });
-        let value = self.client.post_json("/api/chat", &body).await?;
-        let response: ChatResponse = serde_json::from_value(value)?;
-        if !response.done {
-            return Err(Error::new(
-                ErrorKind::EngineProtocol,
-                "Ollama chat ended without done=true",
-            ));
+        let web_enabled = request.permissions.network == "allow";
+        let search = if web_enabled {
+            Some(self.search.as_ref().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    "web_search requires OLLAMA_API_KEY in the Spewer process environment",
+                )
+            })?)
+        } else {
+            None
+        };
+        let tools = web_enabled.then(web_search_tool);
+        let mut messages = vec![json!({"role": "user", "content": self.prompt})];
+        let mut executions = Vec::new();
+        let mut prompt_eval_count = None;
+        let mut eval_count = None;
+        let max_calls = request.budgets.tool_calls.min(MAX_WEB_SEARCH_CALLS);
+        loop {
+            let mut body = json!({
+                "model": request.engine.model,
+                "messages": messages,
+                "stream": false,
+                "think": false,
+                "keep_alive": "5m",
+                "options": {"num_predict": num_predict}
+            });
+            if let Some(tool) = &tools {
+                body.as_object_mut()
+                    .ok_or_else(|| {
+                        Error::new(ErrorKind::EngineProtocol, "Ollama request is not an object")
+                    })?
+                    .insert("tools".to_owned(), json!([tool]));
+            }
+            let value = self.client.post_json("/api/chat", &body).await?;
+            let response: ChatResponse = serde_json::from_value(value)?;
+            validate_chat_response(&response, &request.engine.model)?;
+            add_optional_count(&mut prompt_eval_count, response.prompt_eval_count)?;
+            add_optional_count(&mut eval_count, response.eval_count)?;
+            if response.message.tool_calls.is_empty() {
+                if visible_answer(&response.message.content).is_empty() {
+                    return Err(Error::new(
+                        ErrorKind::EngineProtocol,
+                        "Ollama returned an empty answer",
+                    ));
+                }
+                return Ok(ConversationResponse {
+                    model: response.model,
+                    message: response.message,
+                    done_reason: response.done_reason,
+                    prompt_eval_count,
+                    eval_count,
+                    executions,
+                });
+            }
+            let search = search.ok_or_else(|| {
+                Error::new(
+                    ErrorKind::EngineProtocol,
+                    "Ollama requested a tool for a network-denied task",
+                )
+            })?;
+            messages.push(serde_json::to_value(&response.message)?);
+            for call in response.message.tool_calls {
+                let used = u64::try_from(executions.len())
+                    .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
+                let (call_id, arguments) = parse_web_search_call(call, used, max_calls)?;
+                let result = search.search(&arguments.query).await?;
+                let content = serde_json::to_string(&result)?;
+                let mut tool_message = json!({
+                    "role": "tool",
+                    "tool_name": WEB_SEARCH_TOOL,
+                    "content": content
+                });
+                if let Some(id) = call_id {
+                    tool_message
+                        .as_object_mut()
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::EngineProtocol,
+                                "Ollama tool result is not an object",
+                            )
+                        })?
+                        .insert("tool_call_id".to_owned(), Value::String(id));
+                }
+                messages.push(tool_message);
+                executions.push(ToolExecution {
+                    query: arguments.query,
+                    result_count: result.results.len(),
+                });
+            }
         }
-        if response.model != request.engine.model {
-            return Err(Error::new(
-                ErrorKind::EngineProtocol,
-                "Ollama responded with a different model",
-            ));
-        }
-        if visible_answer(&response.message.content).is_empty() {
-            return Err(Error::new(
-                ErrorKind::EngineProtocol,
-                "Ollama returned an empty answer",
-            ));
-        }
-        Ok(response)
     }
 }
 
@@ -163,20 +244,39 @@ async fn discover(
         .collect::<Vec<_>>();
     models.sort();
     models.dedup();
-    if let Some(required) = required_model
-        && !models.iter().any(|model| model == required)
-    {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            format!("Ollama model {required} is not installed; run 'ollama pull {required}'"),
-        ));
-    }
+    let resolved_model = required_model
+        .map(|required| {
+            resolve_installed_model(&models, required).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    format!(
+                        "Ollama model {required} is not installed; run 'ollama pull {required}'"
+                    ),
+                )
+            })
+        })
+        .transpose()?;
     Ok(OllamaDoctorReport {
         ready: true,
         version: version.version,
         models,
-        required_model: required_model.map(str::to_owned),
+        required_model: resolved_model,
     })
+}
+
+fn resolve_installed_model(models: &[String], required: &str) -> Option<String> {
+    models
+        .iter()
+        .find(|model| model.as_str() == required)
+        .cloned()
+        .or_else(|| {
+            let name = required.rsplit('/').next()?;
+            if name.contains(':') {
+                return None;
+            }
+            let latest = format!("{required}:latest");
+            models.iter().find(|model| **model == latest).cloned()
+        })
 }
 
 fn validate_request(request: &TaskRequest) -> Result<()> {
@@ -203,16 +303,16 @@ fn validate_request(request: &TaskRequest) -> Result<()> {
     Ok(())
 }
 
-fn events(response: &ChatResponse) -> Result<Vec<EngineEvent>> {
+fn events(response: &ConversationResponse) -> Result<Vec<EngineEvent>> {
     let digest = sha256(&serde_json::to_vec(response)?)?;
     let answer = visible_answer(&response.message.content);
-    let event = |method: &str, kind: &str, data: Value, ordinal: u8| EngineEvent {
+    let event = |method: &str, kind: &str, data: Value, ordinal: u64| EngineEvent {
         method: method.to_owned(),
         kind: kind.to_owned(),
         data,
         source_key: format!("ollama:{digest}:{ordinal}"),
     };
-    Ok(vec![
+    let mut output = vec![
         event(
             "chat/accepted",
             "engine.bound",
@@ -225,34 +325,65 @@ fn events(response: &ChatResponse) -> Result<Vec<EngineEvent>> {
             json!({"turn_id": digest}),
             2,
         ),
-        event(
-            "message/started",
+    ];
+    let mut ordinal = 3_u64;
+    for execution in &response.executions {
+        output.push(event(
+            "tool/started",
             "item.started",
-            json!({"item":{"type":"agent_message"},"tool":false}),
-            3,
-        ),
-        event(
-            "message/completed",
-            "item.completed",
-            json!({"summary":answer}),
-            4,
-        ),
-        event(
-            "usage",
-            "usage.updated",
             json!({
-                "input_tokens": response.prompt_eval_count,
-                "output_tokens": response.eval_count
+                "item": {
+                    "type": "tool_call",
+                    "name": WEB_SEARCH_TOOL,
+                    "arguments": {"query": execution.query}
+                },
+                "tool": true
             }),
-            5,
-        ),
-        event(
-            "chat/completed",
-            "turn.completed",
-            json!({"status":"completed","done_reason":response.done_reason}),
-            6,
-        ),
-    ])
+            ordinal,
+        ));
+        ordinal = ordinal.saturating_add(1);
+        output.push(event(
+            "tool/completed",
+            "item.completed",
+            json!({
+                "tool": WEB_SEARCH_TOOL,
+                "result_count": execution.result_count
+            }),
+            ordinal,
+        ));
+        ordinal = ordinal.saturating_add(1);
+    }
+    output.push(event(
+        "message/started",
+        "item.started",
+        json!({"item":{"type":"agent_message"},"tool":false}),
+        ordinal,
+    ));
+    ordinal = ordinal.saturating_add(1);
+    output.push(event(
+        "message/completed",
+        "item.completed",
+        json!({"summary":answer}),
+        ordinal,
+    ));
+    ordinal = ordinal.saturating_add(1);
+    output.push(event(
+        "usage",
+        "usage.updated",
+        json!({
+            "input_tokens": response.prompt_eval_count,
+            "output_tokens": response.eval_count
+        }),
+        ordinal,
+    ));
+    ordinal = ordinal.saturating_add(1);
+    output.push(event(
+        "chat/completed",
+        "turn.completed",
+        json!({"status":"completed","done_reason":response.done_reason}),
+        ordinal,
+    ));
+    Ok(output)
 }
 
 fn visible_answer(content: &str) -> String {
@@ -293,7 +424,55 @@ struct ChatResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ChatMessage {
+    #[serde(default = "assistant_role")]
+    role: String,
+    #[serde(default)]
     content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tool_calls: Vec<ToolCall>,
+}
+
+#[derive(Debug, Serialize)]
+struct ConversationResponse {
+    model: String,
+    message: ChatMessage,
+    done_reason: Option<String>,
+    prompt_eval_count: Option<u64>,
+    eval_count: Option<u64>,
+    executions: Vec<ToolExecution>,
+}
+
+fn assistant_role() -> String {
+    "assistant".to_owned()
+}
+
+fn validate_chat_response(response: &ChatResponse, requested_model: &str) -> Result<()> {
+    if !response.done {
+        return Err(Error::new(
+            ErrorKind::EngineProtocol,
+            "Ollama chat ended without done=true",
+        ));
+    }
+    if response.model != requested_model {
+        return Err(Error::new(
+            ErrorKind::EngineProtocol,
+            "Ollama responded with a different model",
+        ));
+    }
+    Ok(())
+}
+
+fn add_optional_count(total: &mut Option<u64>, next: Option<u64>) -> Result<()> {
+    let Some(next) = next else {
+        return Ok(());
+    };
+    *total = Some(match *total {
+        Some(current) => current
+            .checked_add(next)
+            .ok_or_else(|| Error::new(ErrorKind::EngineProtocol, "Ollama usage overflow"))?,
+        None => next,
+    });
+    Ok(())
 }
 
 #[cfg(test)]

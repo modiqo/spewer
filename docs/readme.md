@@ -50,6 +50,7 @@ Read these documents before adding a harness, transport, or engine:
 | 15 | [Installation and capsules](15-install-and-capsules.md) | How does one command create and advertise a useful worker? | Reference |
 | 16 | [Capsule-bound execution](16-capsule-bound-execution.md) | How does discovery bind one immutable worker configuration to a task? | Reference |
 | 17 | [Frontier integration](17-frontier-integration.md) | Which small client and tool surface should a frontier harness use? | Reference |
+| 19 | [Bounded web search](19-bounded-web-search.md) | How can a local model use current public information safely? | Reference |
 
 ## Decisions preserve the reasons
 
@@ -64,6 +65,8 @@ Each accepted decision records one architectural commitment:
 7. [Keep capsule manifests durable and capability lookup live](decisions/adr-0007-live-capsule-catalog.md).
 8. [Snapshot a selected capsule before acceptance](decisions/adr-0008-snapshot-capsule-before-acceptance.md).
 9. [Expose three frontier actions over one reusable client](decisions/adr-0009-three-action-frontier-surface.md).
+10. [Keep web-search execution inside the Ollama adapter](decisions/adr-0010-bounded-ollama-web-search.md).
+11. [Use a persisted capsule for plain ask](decisions/adr-0011-capsule-aware-ask-defaults.md).
 
 ## Status words carry fixed meaning
 

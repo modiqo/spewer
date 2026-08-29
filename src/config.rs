@@ -23,6 +23,9 @@ pub struct LocalConfig {
     pub default_workspace: String,
     /// App Server engine and model requested for questions.
     pub engine: EngineRequest,
+    /// Capsule selected by `spewer ask` when `--capsule` is omitted.
+    #[serde(default = "default_capsule_id")]
+    pub default_capsule: String,
     /// Authority granted to inferred question tasks.
     pub permissions: Permissions,
     /// Hard limits applied to inferred question tasks.
@@ -41,6 +44,7 @@ impl LocalConfig {
                 model: DEFAULT_MODEL.to_owned(),
                 effort: None,
             },
+            default_capsule: default_capsule_id(),
             permissions: Permissions {
                 filesystem: "read-only".to_owned(),
                 network: "deny".to_owned(),
@@ -152,6 +156,12 @@ impl LocalConfig {
                 "default_workspace must be absolute",
             ));
         }
+        if self.default_capsule.trim().is_empty() {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "default_capsule must not be empty",
+            ));
+        }
         let probe = self.invariant_probe();
         probe.validate()?;
         Ok(())
@@ -180,6 +190,37 @@ impl LocalConfig {
             private_continuation: None,
         }
     }
+}
+
+/// Replaces the capsule used by `spewer ask` when no capsule is named.
+pub fn set_default_capsule(capsule_id: &str) -> Result<LocalConfig> {
+    set_default_capsule_at(&config_path()?, capsule_id)
+}
+
+fn set_default_capsule_at(path: &Path, capsule_id: &str) -> Result<LocalConfig> {
+    let bytes = std::fs::read(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "configuration not found at {}; run 'spewer install'",
+                    path.display()
+                ),
+            )
+        } else {
+            error.into()
+        }
+    })?;
+    let expected = crate::util::sha256(&bytes)?;
+    let mut config: LocalConfig = serde_json::from_slice(&bytes)?;
+    capsule_id.trim().clone_into(&mut config.default_capsule);
+    config.validate()?;
+    write_replace(path, &config, &expected)?;
+    Ok(config)
+}
+
+fn default_capsule_id() -> String {
+    "default".to_owned()
 }
 
 /// Returns the current configuration digest when a regular file exists.
@@ -302,7 +343,7 @@ fn ensure_digest(path: &Path, expected: &str) -> Result<()> {
     if observed != expected {
         return Err(Error::new(
             ErrorKind::InvalidInput,
-            "configuration changed after confirmation; retry init --overwrite",
+            "configuration changed before replacement; retry the command",
         ));
     }
     Ok(())

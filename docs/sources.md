@@ -21,7 +21,16 @@ Before every compatibility release, regenerate schemas from the supported Codex 
 
 ## Durability and agent-interface references
 
-- [SQLite synchronous pragma](https://sqlite.org/pragma.html#pragma_synchronous) defines the durability guarantee for WAL mode with `synchronous=FULL`.
-- [AWS transactional outbox guidance](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html) establishes atomic state-and-message commit, at-least-once delivery, and idempotent consumers.
-- [Model Context Protocol tasks](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks) establishes durable task handles, polling, terminal states, and retention concepts. Spewer does not depend on experimental MCP task transport.
-- [Rippling's MCP engineering post](https://www.rippling.com/blog/building-mcp-server) motivates a small model-visible tool surface, compressed action headers, latency-aware instructions, permission checks, and cross-harness evaluations.
+- [SQLite synchronous pragma](https://sqlite.org/pragma.html#pragma_synchronous) defines WAL durability with `synchronous=FULL`.
+
+- [AWS transactional outbox guidance](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html) covers atomic commits, at-least-once delivery, and idempotent consumers.
+
+- [Model Context Protocol tasks](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks) covers durable handles, polling, terminal states, and retention. Spewer does not depend on its experimental task transport.
+
+- [Rippling's MCP engineering post](https://www.rippling.com/blog/building-mcp-server) motivates small tool surfaces, permission checks, and cross-harness evaluations.
+
+## Local-model tool references
+
+- [Ollama web search](https://docs.ollama.com/capabilities/web-search) defines the hosted APIs, authentication, result schema, and Qwen3 example used by CP19.
+
+- [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling) defines structured tool requests and result messages for local models.

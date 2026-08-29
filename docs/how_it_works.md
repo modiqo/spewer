@@ -97,7 +97,7 @@ Spewer currently ships hosted Luna through Codex App Server. Luna is the default
 worker, not an open-weights model downloaded to the machine.
 
 CP18 adds local Qwen3 through Ollama. It uses the same capsule card, task journal, and receipt.
-The first Ollama adapter performs read-only inference and does not provide an agent tool loop.
+CP19 adds one optional, read-only `web_search` loop. Commands and file writes remain unavailable.
 
 ### Capability cards describe live state
 
@@ -196,7 +196,7 @@ readiness only after the App Server handshake succeeds.
 Run one foreground question:
 
 ```console
-$ spewer ask "Return only the sum of 17 and 19." --text
+$ spewer ask "Return only the sum of 17 and 19."
 36
 ```
 
@@ -235,7 +235,7 @@ The relevant card looks like this:
 Use foreground mode when the caller should wait for the answer:
 
 ```console
-$ spewer ask "Summarize the repository test strategy." --text
+$ spewer ask "Summarize the repository test strategy."
 ```
 
 Use detached mode when the caller should continue other work:
@@ -338,36 +338,50 @@ $ spewer capsule add qwen3-local --engine ollama --model qwen3:30b-a3b
 This command verifies the model before it writes the owner-private capsule manifest. It preserves
 the existing `default` Luna capsule.
 
-The running service reads the updated catalog dynamically. The Qwen3 card advertises
-`"network": false` and `"tools": []` without a restart. A frontier adapter keeps current
-information and tool-dependent work when it sees these fields. The reusable client also rejects
-authority that the selected card does not advertise.
+The running service reads the updated catalog dynamically. Without search configuration, the Qwen3 card advertises `"network": false` and `"tools": []`. A frontier adapter keeps current-information work when it sees these limits.
 
-### Step 3: Ask through the local capsule
+### Step 3: Select Qwen3 for plain questions
 
-Select Qwen3 for an attached question:
+Persist Qwen3 as the default capsule, inspect its ask contract, and ask normally:
 
 ```console
-$ spewer ask "Summarize the supplied parser notes." --capsule qwen3-local --text
+$ spewer capsule default qwen3-local
+$ spewer capsule show
+$ spewer ask "Summarize the supplied parser notes."
 ```
 
-Use the same capsule for detached work:
+Use `--capsule default` for one Luna question. Detached work uses the selected default too:
 
 ```console
-$ spewer ask "Compare the projected test results." --capsule qwen3-local --detach
+$ spewer ask "Compare the projected test results." --detach
 $ spewer check <task-id>
 ```
 
-The receipt records Ollama, Qwen3, usage, and capsule evidence. The text view prints
-`not-reported` for omitted counts and `local-unpriced` without a local price configuration.
+The receipt records Ollama, Qwen3, usage, and capsule evidence. The default text view prints `not-reported` for omitted counts and `local-unpriced` without a local price configuration.
 
-### Step 4: Keep the first local boundary honest
+### Step 4: Enable bounded web search when needed
 
-The CP18 adapter provides read-only inference. It can use the objective, acceptance criteria,
-notes, projected UTF-8 files, and an immutable skill snapshot.
+Local Qwen inference needs no key. `OLLAMA_API_KEY` authenticates hosted search. Restart Spewer
+from the credential-owning shell:
 
-It rejects command allowlists, workspace writes, and writable paths. Delegate tool-driven work to
-the Luna capsule until a local agent loop implements those capabilities.
+```console
+$ spewer stop
+$ spewer serve --engine all
+```
+
+The card now lists `network: true` and `web_search`. Grant network only when needed:
+
+```console
+$ spewer ask "What changed in Ollama?" --web
+```
+
+Spewer validates Qwen's query, returns up to five results, and journals the tool event. The key
+never enters the task or receipt.
+
+### Step 5: Keep the local boundary honest
+
+The adapter remains read-only. It rejects commands, writes, unknown tools, arbitrary URLs, and
+calls above the task or adapter limit.
 
 ## Part IV: Specialize the same worker with a skill
 
@@ -471,6 +485,8 @@ $ spewer capsule unbind default
 | Durable host continuation and receipt application | **Implemented for Play** |
 | Semantic ranking across several capsules | **Planned** |
 | Local Qwen3 inference through Ollama | **Implemented in CP18** |
+| Bounded Qwen web search through Ollama | **Implemented in CP19** |
+| Persisted default capsule and self-describing ask options | **Implemented in CP20** |
 | Local-model command execution and file writes | **Not implemented** |
 | Native integrations for other frontier harnesses | **Planned** |
 | Distributed multi-machine workers | **Not implemented** |
@@ -479,21 +495,6 @@ $ spewer capsule unbind default
 
 Keep the frontier harness you already trust. Give it one durable way to delegate bounded work
 to a lower-cost generic or specialized worker.
-
 ## Sources
 
-- [OpenCode](https://github.com/anomalyco/opencode) describes itself as an open-source coding
-  agent; its [provider documentation](https://opencode.ai/docs/providers) covers model and
-  provider selection.
-- [Pi](https://github.com/badlogic/pi-mono) includes a multi-provider model API and an interactive
-  coding-agent harness.
-- [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) describes the supported standalone CLI
-  installation and sign-in flow.
-- [Codex App Server](https://learn.chatgpt.com/docs/app-server) describes `codex app-server`, its
-  stdio transport, and initialization handshake.
-- [Codex skills](https://learn.chatgpt.com/docs/build-skills) describes skill metadata and loading.
-- [Qwen3](https://github.com/QwenLM/Qwen3) documents local Ollama deployment and model names.
-- [Ollama](https://github.com/ollama/ollama) provides the local model server used by CP18.
-- [Spewer architecture](02-architecture.md), [task protocol](03-task-protocol.md),
-  [capsule execution](16-capsule-bound-execution.md), and
-  [frontier integration](17-frontier-integration.md) define the accepted local contracts.
+The [source ledger](sources.md) records upstream contracts. Spewer's [design index](readme.md) links its accepted local choices.
