@@ -10,6 +10,6 @@ The portability and telemetry test SHA-256 is `812f2635a04a69a1e0964bb3e4bc4a98a
 
 A live Luna receipt retained 52,586 input, 44,288 cached input, 292 output, and 29 reasoning tokens. It recorded two tools and 12,196 milliseconds. Cost stayed unknown because no current Luna price file was configured.
 
-All 25 tests and every repository gate passed.
+All 26 tests and every repository gate passed.
 
 Next checkpoint: CP8.

@@ -10,6 +10,6 @@ The controlled restart matrix also reads a callback, closes before acknowledgeme
 
 A live Luna run completed as task `tsk_78595f1272089d1b049e994d` at event 173. Receipt `rcp_b04d8a2525c341f688316899` and message `msg_358613e23d10ab4eef140739` survived polling. The first acknowledgement applied; the repeated acknowledgement did not.
 
-All 25 tests and every repository gate passed. Stream, wait, and poll requests share the durable outbox; the CLI exposes polling and acknowledgement commands.
+All 26 tests and every repository gate passed. Stream, wait, and poll requests share the durable outbox; the CLI exposes polling and acknowledgement commands.
 
 Next checkpoint: CP6.

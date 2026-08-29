@@ -120,20 +120,20 @@ fn map_notification(method: &str, params: &Value) -> (String, Value) {
         "item/started" => (
             "item.started",
             json!({
-                "item": params.get("item"),
+                "item": item_metadata(params.get("item")),
                 "tool": is_tool_item(params.get("item"))
             }),
         ),
         "item/completed" => (
             "item.completed",
             json!({
-                "item": params.get("item"),
+                "item": item_metadata(params.get("item")),
                 "summary": agent_summary(params.get("item"))
             }),
         ),
         "turn/diff/updated" => (
             "workspace.diff.updated",
-            json!({"diff": params.get("diff")}),
+            json!({"diff_bytes": params.get("diff").and_then(Value::as_str).map(str::len)}),
         ),
         "thread/tokenUsage/updated" => ("usage.updated", normalize_usage(params)),
         "model/rerouted" => (
@@ -174,6 +174,14 @@ fn normalize_plan(params: &Value) -> Vec<Value> {
         normalized.push(json!({"step": step, "status": status}));
     }
     normalized
+}
+
+fn item_metadata(item: Option<&Value>) -> Value {
+    json!({
+        "id": item.and_then(|value| value.get("id")),
+        "type": item.and_then(|value| value.get("type")),
+        "status": item.and_then(|value| value.get("status"))
+    })
 }
 
 fn normalize_usage(params: &Value) -> Value {
@@ -258,6 +266,21 @@ mod tests {
             Some(&json!("in_progress"))
         );
         assert!(event.source_key.ends_with(":1"));
+        Ok(())
+    }
+
+    #[test]
+    fn item_events_do_not_persist_native_prompt_bodies() -> Result<(), Box<dyn std::error::Error>> {
+        let mut normalizer = Normalizer::default();
+        let event = normalizer.normalize(CodexMessage::Notification {
+            method: "item/started".to_owned(),
+            params: json!({
+                "item":{"id":"item-one","type":"userMessage","text":"unique-secret-body"}
+            }),
+        })?;
+        let encoded = serde_json::to_string(&event.data)?;
+        assert!(!encoded.contains("unique-secret-body"));
+        assert_eq!(event.data.pointer("/item/id"), Some(&json!("item-one")));
         Ok(())
     }
 }

@@ -10,6 +10,6 @@ The security implementation SHA-256 is `d150c32633ce79acceb44f0208ece19eaded5ea5
 
 A live Luna run with a 20,000-token limit observed 35,981 counted tokens and returned `escalated`. The workspace evidence remained intact.
 
-All 25 tests and every repository gate passed.
+All 26 tests and every repository gate passed.
 
 Next checkpoint: CP7.

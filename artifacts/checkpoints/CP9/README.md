@@ -8,6 +8,6 @@ The contract SHA-256 is `0711ef68342932d3bdae103de413c2248e3dc17f3fb966a73ca608a
 
 The deterministic fake engine emits plans, tools, usage, pauses, failures, completion, and duplicate source events. It runs the same public task, reducer, budget, receipt, and callback contracts without a Codex wire type. Capability negotiation makes unsupported behavior explicit.
 
-All 25 tests and every repository gate passed. The separate engine design describes the narrow work needed for a future Kimi, Qwen, Pi, or local-model adapter.
+All 26 tests and every repository gate passed. The separate engine design describes the narrow work needed for a future Kimi, Qwen, Pi, or local-model adapter.
 
 Next checkpoint: release 0.1 review.

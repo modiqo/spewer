@@ -8,6 +8,6 @@ The Play adapter keeps Play’s continuation identifier inside Play’s owner-pr
 
 The portability test covers duplicate parent callbacks and verifies that the Play handoff rejects embedded continuation state. Spewer’s core imports no Play runtime package.
 
-All 25 tests and every repository gate passed.
+All 26 tests and every repository gate passed.
 
 Next checkpoint: CP9.
