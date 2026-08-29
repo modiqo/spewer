@@ -1,5 +1,9 @@
 //! One bounded engine run from validated request to receipt.
 
+mod accepted;
+
+pub use accepted::{fail_durable, run_codex_accepted};
+
 use crate::codex::{
     CodexClient, CodexConfig, CodexMessage, NormalizedEvent, Normalizer, thread_params, turn_params,
 };
@@ -10,7 +14,7 @@ use crate::protocol::{Event, PROTOCOL_VERSION, Receipt, TaskHandle, TaskRequest}
 use crate::receipt::build_receipt;
 use crate::reducer::Projection;
 use crate::store::Database;
-use crate::util::{new_id, now};
+use crate::util::{new_id, now, required_pointer};
 use crate::workspace::{Workspace, WorkspaceEvidence};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -41,7 +45,7 @@ pub(crate) struct DriveOutcome {
 
 /// Runs one task through Codex App Server and returns a typed receipt.
 pub async fn run_codex(request: TaskRequest, config: CodexConfig) -> Result<RunResult> {
-    run_codex_inner(request, config, None).await
+    run_codex_inner(request, config, None, None).await
 }
 
 /// Runs one task while committing every accepted event to `SQLite`.
@@ -50,13 +54,14 @@ pub async fn run_codex_durable(
     config: CodexConfig,
     database: &Database,
 ) -> Result<RunResult> {
-    run_codex_inner(request, config, Some(database)).await
+    run_codex_inner(request, config, Some(database), None).await
 }
 
-async fn run_codex_inner(
+pub(super) async fn run_codex_inner(
     request: TaskRequest,
     mut config: CodexConfig,
     database: Option<&Database>,
+    accepted_task_id: Option<String>,
 ) -> Result<RunResult> {
     request.validate()?;
     if request.engine.kind != "codex-app-server" {
@@ -70,7 +75,10 @@ async fn run_codex_inner(
             config.inherited_environment.push(name.clone());
         }
     }
-    let (task_id, handle, mut task) = accept_task(&request, database).await?;
+    let (task_id, handle, mut task) = match accepted_task_id {
+        Some(task_id) => accepted::load_accepted_task(&request, database, task_id).await?,
+        None => accept_task(&request, database).await?,
+    };
     let workspace = Workspace::prepare(&request, &task_id).await?;
     record_workspace(&mut task, &workspace).await?;
     let started = Instant::now();
@@ -486,12 +494,4 @@ async fn append_diff(task: &mut TaskJournal<'_>, evidence: &WorkspaceEvidence) -
     )
     .await?;
     Ok(())
-}
-
-fn required_pointer(value: &Value, pointer: &str) -> Result<String> {
-    value
-        .pointer(pointer)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| Error::new(ErrorKind::EngineProtocol, format!("missing {pointer}")))
 }

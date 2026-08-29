@@ -202,10 +202,15 @@ pub fn apply(current: &Projection, event: &Event) -> Result<Projection> {
             next.phase = Phase::Acting;
         }
         "turn.completed" => apply_turn_completed(&mut next, &event.data),
-        "task.failed" | "engine.protocol_error" => next.status = TaskStatus::Failed,
+        "task.failed" | "engine.protocol_error" => {
+            next.status = TaskStatus::Failed;
+            if let Some(reason) = string_field(&event.data, "reason") {
+                next.summary = reason;
+            }
+        }
         "task.cancelled" => next.status = TaskStatus::Cancelled,
         "task.escalated" | "budget.exceeded" => next.status = TaskStatus::Escalated,
-        "task.accepted" | "item.progress" | "engine.unknown" | "engine.stderr"
+        "task.accepted" | "turn.leased" | "item.progress" | "engine.unknown" | "engine.stderr"
         | "task.heartbeat" => {}
         other => {
             return Err(Error::new(

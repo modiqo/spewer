@@ -23,6 +23,8 @@ pub mod runner;
 pub mod security;
 /// Durable event log, projection, and source deduplication.
 pub mod store;
+/// Turn-aware scheduling across bounded App Server workers.
+pub mod supervisor;
 /// Cost derivation and Pareto comparison exports.
 pub mod telemetry;
 /// Isolated Git worktree preparation and artifact capture.
@@ -32,6 +34,10 @@ pub mod workspace;
 pub mod cli;
 /// Codex App Server process and protocol integration.
 pub mod codex;
+/// Owner-private defaults used to infer one-off questions.
+pub mod config;
+/// Private local control socket used by the CLI and parent harnesses.
+pub mod control;
 /// Typed failures returned by Spewer operations.
 pub mod error;
 

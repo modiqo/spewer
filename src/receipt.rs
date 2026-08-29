@@ -55,3 +55,33 @@ pub(crate) fn build_receipt(
         completed_at: now()?,
     })
 }
+
+pub(crate) fn build_failure_receipt(
+    projection: &Projection,
+    request: &TaskRequest,
+) -> Result<Receipt> {
+    let mut usage: Usage = projection.usage.clone();
+    usage.wall_ms = 0;
+    Ok(Receipt {
+        protocol_version: PROTOCOL_VERSION.to_owned(),
+        receipt_id: new_id("rcp")?,
+        task_id: projection.task_id.clone(),
+        attempt: projection.attempt,
+        status: ReceiptStatus::Failed,
+        summary: projection.summary.clone(),
+        artifacts: Vec::new(),
+        verification: Vec::new(),
+        verification_waiver: Some(
+            "The worker failed before workspace verification completed.".to_owned(),
+        ),
+        usage,
+        engine: ReceiptEngine {
+            kind: request.engine.kind.clone(),
+            requested_model: request.engine.model.clone(),
+            observed_models: projection.engine.observed_models.clone(),
+            version: None,
+        },
+        final_event_seq: projection.event_seq,
+        completed_at: now()?,
+    })
+}

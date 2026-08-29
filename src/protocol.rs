@@ -7,6 +7,8 @@ use std::path::{Component, Path};
 
 /// The current wire protocol version.
 pub const PROTOCOL_VERSION: &str = "0.1";
+/// Default commodity model selected when a request omits `engine.model`.
+pub const DEFAULT_MODEL: &str = "gpt-5.6-luna";
 
 /// A request violated a public protocol invariant.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -222,10 +224,15 @@ pub struct EngineRequest {
     /// Engine discriminator.
     pub kind: String,
     /// Model selected after capability discovery.
+    #[serde(default = "default_model")]
     pub model: String,
     /// Optional provider reasoning effort.
     #[serde(default)]
     pub effort: Option<String>,
+}
+
+fn default_model() -> String {
+    DEFAULT_MODEL.to_owned()
 }
 
 /// Parent result delivery preference.

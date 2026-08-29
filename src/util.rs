@@ -1,4 +1,5 @@
 use crate::error::{Error, ErrorKind, Result};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
 use std::path::PathBuf;
@@ -35,6 +36,14 @@ pub(crate) fn sha256(bytes: &[u8]) -> Result<String> {
             .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
     }
     Ok(encoded)
+}
+
+pub(crate) fn required_pointer(value: &Value, pointer: &str) -> Result<String> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| Error::new(ErrorKind::EngineProtocol, format!("missing {pointer}")))
 }
 
 pub(crate) fn data_root() -> Result<PathBuf> {

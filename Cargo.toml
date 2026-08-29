@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.96"
 license = "Apache-2.0"
 description = "A durable supervisor for bounded work delegated to cheaper agent harnesses"
-repository = "https://github.com/tulving/spewer"
+repository = "https://github.com/modiqo/spewer"
 publish = false
 
 [dependencies]
@@ -15,7 +15,7 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 sha2 = { version = "=0.11.0", default-features = false }
 time = { version = "=0.3.55", default-features = false, features = ["formatting", "std"] }
-tokio = { version = "=1.53.1", default-features = false, features = ["io-util", "macros", "process", "rt", "signal", "sync", "time"] }
+tokio = { version = "=1.53.1", default-features = false, features = ["io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.31.3", default-features = false, features = ["process", "signal"] }
@@ -41,4 +41,3 @@ panic = "deny"
 todo = "deny"
 unimplemented = "deny"
 unreachable = "deny"
-

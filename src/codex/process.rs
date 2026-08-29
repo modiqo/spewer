@@ -34,7 +34,8 @@ pub struct CodexConfig {
 impl Default for CodexConfig {
     fn default() -> Self {
         Self {
-            program: PathBuf::from("codex"),
+            program: std::env::var_os("SPEWER_CODEX_BIN")
+                .map_or_else(|| PathBuf::from("codex"), PathBuf::from),
             app_server_args: vec![OsString::from("app-server"), OsString::from("--stdio")],
             inherited_environment: vec![
                 "HOME".to_owned(),

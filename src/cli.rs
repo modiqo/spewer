@@ -1,44 +1,47 @@
-//! Minimal command-line interface.
+//! Machine-readable command-line interface with lifecycle-directed help.
+
+mod help;
+mod parse;
+mod question;
+mod service;
 
 use crate::codex::{CodexConfig, doctor};
-use crate::error::{Error, ErrorKind, Result};
+use crate::error::Result;
 use crate::protocol::TaskRequest;
 use crate::runner::run_codex_durable;
 use crate::store::Database;
-use lexopt::prelude::*;
+use parse::{CliCommand, HelpTopic, parse};
 use serde_json::json;
 use std::path::PathBuf;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum CliCommand {
-    DoctorCodex,
-    RunCodex(PathBuf),
-    Status(String),
-    Tail {
-        task_id: String,
-        after: u64,
-    },
-    Rebuild(String),
-    Resume(String),
-    Recover,
-    Outbox(String),
-    Acknowledge {
-        message_id: String,
-        consumer_id: String,
-    },
-    Help,
-    Version,
-}
 
 /// Parses process arguments, runs one command, and writes JSON to stdout.
 pub async fn run() -> Result<()> {
     match parse(std::env::args_os().skip(1))? {
+        CliCommand::Init {
+            workspace,
+            overwrite,
+        } => question::initialize(workspace, overwrite).await?,
+        CliCommand::Ask {
+            question: prompt,
+            workspace,
+            text,
+            detach,
+            socket,
+        } => Box::pin(question::ask(prompt, workspace, text, detach, socket)).await?,
         CliCommand::DoctorCodex => {
             let report = doctor(CodexConfig::default()).await?;
             let json = serde_json::to_string_pretty(&report)?;
             println!("{json}");
         }
         CliCommand::RunCodex(path) => run_task(path).await?,
+        CliCommand::Serve {
+            max_workers,
+            socket,
+            detach,
+        } => service::serve(max_workers, socket, detach).await?,
+        CliCommand::Submit { path, socket } => submit(path, socket).await?,
+        CliCommand::Load { socket } => load(socket).await?,
+        CliCommand::Stop { socket } => stop(socket).await?,
         CliCommand::Status(task_id) => show_status(task_id).await?,
         CliCommand::Tail { task_id, after } => tail(task_id, after).await?,
         CliCommand::Rebuild(task_id) => rebuild(task_id).await?,
@@ -49,95 +52,14 @@ pub async fn run() -> Result<()> {
             message_id,
             consumer_id,
         } => acknowledge(message_id, consumer_id).await?,
-        CliCommand::Help => print_help(),
+        CliCommand::Help(topic) => print_help(topic),
         CliCommand::Version => println!("spewer {}", env!("CARGO_PKG_VERSION")),
     }
     Ok(())
 }
 
-fn parse(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> Result<CliCommand> {
-    let mut parser = lexopt::Parser::from_args(arguments);
-    let Some(argument) = parser
-        .next()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-    else {
-        return Ok(CliCommand::Help);
-    };
-    match argument {
-        Value(value) if value == "doctor" => parse_doctor(&mut parser),
-        Value(value) if value == "run" => parse_run(&mut parser),
-        Value(value) if value == "status" => {
-            parse_task_id(&mut parser, "status").map(CliCommand::Status)
-        }
-        Value(value) if value == "tail" => parse_tail(&mut parser),
-        Value(value) if value == "rebuild" => {
-            parse_task_id(&mut parser, "rebuild").map(CliCommand::Rebuild)
-        }
-        Value(value) if value == "resume" => {
-            parse_task_id(&mut parser, "resume").map(CliCommand::Resume)
-        }
-        Value(value) if value == "recover" => {
-            parse_no_arguments(&mut parser, "recover", CliCommand::Recover)
-        }
-        Value(value) if value == "outbox" => {
-            parse_task_id(&mut parser, "outbox").map(CliCommand::Outbox)
-        }
-        Value(value) if value == "ack" => parse_acknowledgement(&mut parser),
-        Long("help") | Short('h') => Ok(CliCommand::Help),
-        Long("version") | Short('V') => Ok(CliCommand::Version),
-        Value(value) => Err(Error::new(
-            ErrorKind::InvalidInput,
-            format!("unknown command {}", value.to_string_lossy()),
-        )),
-        other => Err(Error::new(
-            ErrorKind::InvalidInput,
-            format!("unexpected argument {other:?}"),
-        )),
-    }
-}
-
-fn parse_run(parser: &mut lexopt::Parser) -> Result<CliCommand> {
-    let mut task_path = None;
-    let mut engine = None;
-    while let Some(argument) = parser
-        .next()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-    {
-        match argument {
-            Value(value) if task_path.is_none() => task_path = Some(PathBuf::from(value)),
-            Long("engine") => {
-                engine = Some(
-                    parser
-                        .value()
-                        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?,
-                );
-            }
-            other => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("unexpected run argument {other:?}"),
-                ));
-            }
-        }
-    }
-    let path = task_path
-        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "run requires a task JSON path"))?;
-    match engine {
-        Some(value) if value == "codex" => Ok(CliCommand::RunCodex(path)),
-        Some(value) => Err(Error::new(
-            ErrorKind::InvalidInput,
-            format!("unsupported engine {}", value.to_string_lossy()),
-        )),
-        None => Err(Error::new(
-            ErrorKind::InvalidInput,
-            "run requires --engine codex",
-        )),
-    }
-}
-
 async fn run_task(path: PathBuf) -> Result<()> {
-    let task_json = tokio::task::spawn_blocking(move || std::fs::read_to_string(path)).await??;
-    let request: TaskRequest = serde_json::from_str(&task_json)?;
+    let request = read_request(path).await?;
     let database = Database::open(Database::default_path()?).await?;
     let outcome = run_codex_durable(request, CodexConfig::default(), &database).await;
     let close = database.close().await;
@@ -158,6 +80,37 @@ async fn run_task(path: PathBuf) -> Result<()> {
         println!("{}", serde_json::to_string(&json!({"callback": callback}))?);
     }
     Ok(())
+}
+
+async fn submit(path: PathBuf, socket: Option<PathBuf>) -> Result<()> {
+    let request = read_request(path).await?;
+    let handle = crate::control::submit(socket_path(socket)?, request).await?;
+    println!("{}", serde_json::to_string_pretty(&handle)?);
+    Ok(())
+}
+
+async fn load(socket: Option<PathBuf>) -> Result<()> {
+    let load = crate::control::load(socket_path(socket)?).await?;
+    println!("{}", serde_json::to_string_pretty(&load)?);
+    Ok(())
+}
+
+async fn stop(socket: Option<PathBuf>) -> Result<()> {
+    let response = crate::control::stop(socket_path(socket)?).await?;
+    println!("{}", serde_json::to_string_pretty(&response)?);
+    Ok(())
+}
+
+async fn read_request(path: PathBuf) -> Result<TaskRequest> {
+    let task_json = tokio::task::spawn_blocking(move || std::fs::read_to_string(path)).await??;
+    Ok(serde_json::from_str(&task_json)?)
+}
+
+pub(super) fn socket_path(path: Option<PathBuf>) -> Result<PathBuf> {
+    match path {
+        Some(path) => Ok(path),
+        None => crate::control::default_socket_path(),
+    }
 }
 
 async fn resume(task_id: String) -> Result<()> {
@@ -222,182 +175,6 @@ async fn rebuild(task_id: String) -> Result<()> {
     Ok(())
 }
 
-fn parse_task_id(parser: &mut lexopt::Parser, command: &str) -> Result<String> {
-    let value = parser
-        .value()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
-    if parser
-        .next()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-        .is_some()
-    {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            format!("{command} accepts one task id"),
-        ));
-    }
-    Ok(value.to_string_lossy().into_owned())
-}
-
-fn parse_tail(parser: &mut lexopt::Parser) -> Result<CliCommand> {
-    let task_id = parser
-        .value()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-        .to_string_lossy()
-        .into_owned();
-    let mut after = 0;
-    while let Some(argument) = parser
-        .next()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-    {
-        match argument {
-            Long("after") => {
-                let value = parser
-                    .value()
-                    .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
-                after = value
-                    .to_string_lossy()
-                    .parse::<u64>()
-                    .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
-            }
-            other => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("unexpected tail argument {other:?}"),
-                ));
-            }
-        }
-    }
-    Ok(CliCommand::Tail { task_id, after })
-}
-
-fn parse_no_arguments(
-    parser: &mut lexopt::Parser,
-    command: &str,
-    result: CliCommand,
-) -> Result<CliCommand> {
-    if parser
-        .next()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-        .is_some()
-    {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            format!("{command} accepts no arguments"),
-        ));
-    }
-    Ok(result)
-}
-
-fn parse_acknowledgement(parser: &mut lexopt::Parser) -> Result<CliCommand> {
-    let message_id = parser
-        .value()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-        .to_string_lossy()
-        .into_owned();
-    let consumer_id = parser
-        .value()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-        .to_string_lossy()
-        .into_owned();
-    if parser
-        .next()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-        .is_some()
-    {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "ack accepts two arguments",
-        ));
-    }
-    Ok(CliCommand::Acknowledge {
-        message_id,
-        consumer_id,
-    })
-}
-
-fn parse_doctor(parser: &mut lexopt::Parser) -> Result<CliCommand> {
-    let mut engine = None;
-    while let Some(argument) = parser
-        .next()
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?
-    {
-        match argument {
-            Long("engine") => {
-                let value = parser
-                    .value()
-                    .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
-                engine = Some(value);
-            }
-            Long("help") | Short('h') => return Ok(CliCommand::Help),
-            other => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("unexpected doctor argument {other:?}"),
-                ));
-            }
-        }
-    }
-    match engine {
-        Some(value) if value == "codex" => Ok(CliCommand::DoctorCodex),
-        Some(value) => Err(Error::new(
-            ErrorKind::InvalidInput,
-            format!("unsupported engine {}", value.to_string_lossy()),
-        )),
-        None => Err(Error::new(
-            ErrorKind::InvalidInput,
-            "doctor requires --engine codex",
-        )),
-    }
-}
-
-fn print_help() {
-    println!(
-        "spewer {}\n\nUSAGE:\n  spewer doctor --engine codex\n  spewer run <task.json> --engine codex\n  spewer status <task-id>\n  spewer tail <task-id> [--after <seq>]\n  spewer rebuild <task-id>\n  spewer recover\n  spewer resume <task-id>\n  spewer outbox <consumer-id>\n  spewer ack <message-id> <consumer-id>\n  spewer --version",
-        env!("CARGO_PKG_VERSION")
-    );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{CliCommand, parse};
-    use std::ffi::OsString;
-
-    #[test]
-    fn parses_doctor() -> Result<(), Box<dyn std::error::Error>> {
-        let arguments = ["doctor", "--engine", "codex"]
-            .into_iter()
-            .map(OsString::from);
-        assert_eq!(parse(arguments)?, CliCommand::DoctorCodex);
-        Ok(())
-    }
-
-    #[test]
-    fn parses_run() -> Result<(), Box<dyn std::error::Error>> {
-        let arguments = ["run", "task.json", "--engine", "codex"]
-            .into_iter()
-            .map(OsString::from);
-        assert_eq!(
-            parse(arguments)?,
-            CliCommand::RunCodex(std::path::PathBuf::from("task.json"))
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn parses_durable_queries() -> Result<(), Box<dyn std::error::Error>> {
-        let status = ["status", "task-one"].into_iter().map(OsString::from);
-        assert_eq!(parse(status)?, CliCommand::Status("task-one".to_owned()));
-        let tail = ["tail", "task-one", "--after", "12"]
-            .into_iter()
-            .map(OsString::from);
-        assert_eq!(
-            parse(tail)?,
-            CliCommand::Tail {
-                task_id: "task-one".to_owned(),
-                after: 12
-            }
-        );
-        Ok(())
-    }
+fn print_help(topic: Option<HelpTopic>) {
+    print!("{}", help::render(topic));
 }
