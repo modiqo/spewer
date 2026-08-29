@@ -1,234 +1,213 @@
 # Spewer
 
-Spewer is a small Rust supervisor that lets agent harnesses delegate bounded work to cheaper models.
+Spewer is a local Rust service that lets your current AI harness delegate bounded work to
+lower-cost models.
 
-The parent harness keeps the judgment. Spewer schedules the routine turn, preserves its state, and returns a typed receipt.
+Keep working in Codex, Claude Code, Kimi, or another preferred harness. Spewer runs the delegated
+worker, keeps its task alive, and returns an evidence-rich receipt.
 
-![A parent harness sends a bounded task through Spewer's durable queue, engine adapter, and commodity model. Spewer returns a typed receipt.](assets/tutorial/01-what-spewer-does.png)
+![A frontier harness delegates bounded work through Spewer to a commodity model](assets/tutorial/01-what-spewer-does.png)
 
-Version 0.1 runs [Codex App Server](https://learn.chatgpt.com/docs/app-server) with `gpt-5.6-luna` by default. The public protocol remains independent from Codex.
+The shortest useful path is three commands:
 
-Neither endpoint is fixed. Another harness can be the parent, and another engine adapter can run a local or remote commodity model.
+```console
+$ cargo install --path . --locked
+$ spewer install
+$ spewer ask "What is 17 multiplied by 19?" --text
+323
+```
 
-## Run one bounded task
+That is a working Spewer. The next steps progressively add background work, frontier delegation,
+specialized skills, and concurrent workers.
 
-You need macOS or Linux, Rust 1.96 or newer, and Git. `spewer install` checks for Codex CLI and uses its official installer when needed.
+## Start with one useful worker
 
-Install Spewer from this checkout:
+You need macOS or Linux, Rust 1.96 or newer, and Git. Spewer installs Codex CLI when it is missing.
+
+Version 0.1 uses hosted `gpt-5.6-luna` through Codex App Server. It does not download model weights
+to your machine.
+
+### 1. Install Spewer
+
+Install the current checkout:
 
 ```console
 $ cargo install --path . --locked
 ```
 
-Prepare an owner-private configuration, the generic Luna capsule, the reference Codex delegation skill, Codex App Server, and the detached service:
+Prepare Luna, the generic worker capsule, the Codex delegation skill, and the detached service:
 
 ```console
 $ spewer install
 ```
 
-If Codex needs authentication, run `codex` once to sign in, then repeat `spewer install`. The defaults choose Luna, deny network access, and make inferred question tasks read-only.
+A successful response includes `"ready": true` and a generic `default` capsule.
 
-The install command waits for readiness, prints structured JSON, and returns immediately. Repeating it preserves the configuration and reuses the running service.
+If Codex needs authentication, run `codex` once. Then repeat `spewer install`.
 
-```console
-$ spewer install --max-workers 1
-{
-  "ready": true,
-  "capsules": {
-    "capsules": [{"id": "default", "kind": "generic"}]
-  },
-  "service": {"ready": true, "mode": "detached"}
-}
-```
+### 2. Ask one foreground question
 
-Ask a question through the running service:
+Run a question and wait for its answer:
 
 ```console
 $ spewer ask "What is 17 multiplied by 19?" --text
 323
 ```
 
-Spewer writes live progress and final telemetry to standard error. Structured task data stays on standard output.
+This proves that configuration, App Server startup, Luna access, execution, and receipt creation
+all work.
 
-```text
-spewer: status=completed model=gpt-5.6-luna ... tools=0 ... cost=unknown
-```
+Spewer writes progress to standard error. The requested text or structured result stays on
+standard output.
 
-Use `spewer init --overwrite` to replace an existing configuration. Spewer asks for confirmation before it writes.
+### 3. Let a task run in the background
 
-Bind a skill when the same capsule should advertise specialized work. The running service exposes the change on its next capability lookup.
+Detach work when you want the caller to continue immediately:
 
 ```console
-$ spewer capsule bind default ./path/to/skill
-$ spewer capsule list
-$ spewer capsule unbind default
+$ spewer ask "Inspect the parser tests and summarize any failures." --detach
 ```
 
-Delegate a complete task through the current live capsule, then check it through the small harness surface:
+Spewer returns a durable `task_id`. Check it when convenient:
+
+```console
+$ spewer check <task-id>
+```
+
+When `ready` becomes `true`, the response contains the stable terminal receipt. Until then, wait
+for `observation.poll_after_ms` before checking again.
+
+Cancel work you no longer need:
+
+```console
+$ spewer cancel <task-id> --reason "the parent no longer needs it"
+```
+
+### 4. Delegate from Codex without changing harnesses
+
+`spewer install` already installs the reference Codex skill. You do not need a separate
+`spewer connect` command.
+
+Ask Codex explicitly for the first proof:
+
+```text
+Use Spewer to delegate this bounded task to the default capsule:
+inspect the parser tests and return a concise failure summary.
+```
+
+The skill uses three Spewer commands:
 
 ```console
 $ spewer delegate task.json --capsule default
-$ spewer check tsk_example
-$ spewer cancel tsk_example --reason "the parent no longer needs it"
+$ spewer check <task-id>
+$ spewer cancel <task-id> --reason "the task is no longer needed"
 ```
 
-`delegate` discovers the current capsule and binds its revision before Spewer accepts work. A specialized task snapshots the exact skill instructions, and its receipt identifies the capsule and safe skill evidence.
+Codex keeps the conversation and final judgment. Spewer runs Luna and returns the worker's
+receipt.
 
-## Read the receipt before trusting the answer
+### 5. Turn the generic worker into a specialist
 
-Each terminal receipt identifies the requested and observed models. It also records tokens, tool calls, elapsed time, artifacts, and verification evidence.
-
-That evidence supports a Pareto profile across quality, cost, and latency. “Pareto IQ” is a useful nickname, but it is not a standardized intelligence score.
-
-Spewer never turns missing price data into zero. Set `SPEWER_PRICE_CONFIG` to a versioned price file when dollar cost matters.
-
-An empty Git diff is valid evidence for a read-only task. Its SHA-256 is `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
-
-## Spewer exists because execution is abundant
-
-Calvin French-Owen's essay [*Small Models Have Arrived*](https://calv.info/small-models-have-arrived) separates rare frontier judgment from abundant “token spewer” work.
-
-Spewer supplies the missing execution layer around that cheaper work:
-
-- a durable queue prevents accepted tasks from disappearing;
-- bounded workers keep local load visible;
-- permissions and budgets limit worker authority;
-- checkpoints preserve observable progress;
-- receipts expose model, token, cost, artifact, and verification evidence;
-- conservative recovery escalates uncertain effects instead of repeating them.
-
-The decisions explain why each boundary exists:
-
-- [ADR-0001 chooses Codex App Server first](docs/decisions/adr-0001-codex-first.md).
-- [ADR-0002 keeps the protocol engine-neutral](docs/decisions/adr-0002-engine-neutral.md).
-- [ADR-0003 pairs an event log with an outbox](docs/decisions/adr-0003-event-log-outbox.md).
-- [ADR-0004 keeps Rust and Tokio deliberately small](docs/decisions/adr-0004-rust-tokio.md).
-- [ADR-0005 puts one service protocol behind thin adapters](docs/decisions/adr-0005-harness-service-boundary.md).
-- [ADR-0006 closes dispatch and parent-delivery crash windows](docs/decisions/adr-0006-durable-dispatch-and-inbox.md).
-- [ADR-0007 keeps durable capsules behind live capability lookup](docs/decisions/adr-0007-live-capsule-catalog.md).
-- [ADR-0008 snapshots a selected capsule before acceptance](docs/decisions/adr-0008-snapshot-capsule-before-acceptance.md).
-- [ADR-0009 keeps the frontier surface to three actions](docs/decisions/adr-0009-three-action-frontier-surface.md).
-
-## Run a task without blocking the harness
-
-Detached submission returns a durable handle before a worker starts:
+Bind any valid `SKILL.md` or skill directory to the default capsule:
 
 ```console
-$ spewer ask "Inspect the parser tests and summarize the failures" --detach
+$ spewer capsule bind default /absolute/path/to/review-skill
 ```
 
-Store the returned `task_id`. Observe from the last stored event cursor:
-
-```console
-$ spewer observe tsk_example --after 0
-```
-
-The response includes `next_cursor` and `poll_after_ms`. Wait for that delay before polling again.
-
-Read the stable terminal message after observation reports a terminal state:
-
-```console
-$ spewer result tsk_example
-```
-
-Persist the receipt before acknowledging its message:
-
-```console
-$ spewer ack msg_example spewer-ask
-```
-
-Acknowledgement does not delete the result. A later `result` call returns the same terminal message.
-
-Stop new acceptance and drain every accepted turn when local work is finished:
-
-```console
-$ spewer stop
-```
-
-## A harness uses a thin durable adapter
-
-The harness owns classification, its continuation, and the final response. Spewer owns scheduling, execution, recovery, and receipts.
-
-![A harness classifier and private adapter inbox use submit, observe, result, and acknowledge against Spewer's durable task and receipt outbox.](assets/tutorial/02-harness-adapter-loop.png)
-
-The adapter follows four service operations in order:
-
-1. `submit` commits the task and returns its stable handle.
-2. `observe` replays committed events after the adapter's stored cursor.
-3. `result` returns one stable terminal message without consuming it.
-4. `acknowledge` records that the declared consumer applied the receipt.
-
-Negotiate the exact service surface before depending on an operation:
+The running service updates immediately. Confirm the new capability card:
 
 ```console
 $ spewer capabilities
 ```
 
-Submit a complete [task request](docs/03-task-protocol.md), then store its `task_id`:
+The `default` capsule now reports `"kind": "specialized"` with the skill name, revision, and
+digest. New delegated tasks receive an immutable copy of those instructions.
 
-```console
-$ spewer submit task.json
-```
-
-Use the same lifecycle through any transport adapter:
-
-```console
-$ spewer observe tsk_example --after 0
-$ spewer result tsk_example
-$ spewer ack msg_example my-harness
-```
-
-The adapter must persist its task handle, cursor, terminal inbox entry, claim identity, and application state. It must acknowledge only after its harness durably resumes.
-
-[Harness communication](docs/12-harness-communication.md) defines the portable pattern. [Crash closure](docs/13-crash-closure.md) defines its failure behavior.
-
-## Play is the first conformance adapter
-
-[Play](https://github.com/modiqo/play) implements the durable parent side. It stores private state under `~/.rote-play/spewer`.
-
-The shell tutorial makes every state transition explicit:
-
-```console
-$ play spewer submit \
-    --host-run-id run_123 \
-    --continuation-ref owner_private_ref \
-    --request task.json
-$ play spewer watch psj_example
-$ play spewer claim psj_example --claim-id host_attempt_1
-# The harness resumes Play with the claimed receipt.
-$ play spewer complete psj_example --claim-id host_attempt_1
-```
-
-Production hosts should call the Play adapter in process. This keeps continuation references out of shell history and process arguments.
-
-The [Play integration guide](docs/10-play-integration.md) explains ownership. The [adapter contract](docs/14-play-adapter.md) defines retries, claims, and acknowledgement.
-
-## Recovery never guesses about effects
-
-Spewer commits task acceptance and queue intent in one SQLite transaction. Each worker receives a durable lease before execution starts.
-
-Spewer also records App Server process custody before initialization. Restart verifies that process identity before signaling its process group.
-
-Pristine work returns to the queue. Work with execution evidence becomes `escalated` instead of running twice.
-
-The task lifecycle is monotonic:
+Ask Codex to use it:
 
 ```text
-queued -> starting -> running -> completed | failed | cancelled | escalated
-                           \-> input_required | stalled
+Use Spewer's default capsule to review these parser changes.
+Apply the bound review skill, then judge the returned receipt.
 ```
 
-Read [durability](docs/05-durability.md), [security](docs/07-security.md), and [crash closure](docs/13-crash-closure.md) before adding an engine or transport.
+Return the same worker to generic service at any time:
 
-## Read the design in sequence
+```console
+$ spewer capsule unbind default
+```
 
-The [design index](docs/readme.md) starts with the product contract and ends with the tested Play adapter.
+## Run more workers when you need them
 
-The first seven documents explain Spewer and its stable contracts. The remaining documents cover implementation, testing, and integration.
+One service can lease several local App Server workers concurrently. Restart it with four worker
+slots:
 
-## Build and verify the same gates
+```console
+$ spewer stop
+$ spewer install --max-workers 4
+```
 
-Spewer forbids unsafe code, panic primitives, unchecked indexing, and unchecked arithmetic. Every handwritten Rust source file stays below 500 physical lines.
+`spewer stop` stops new acceptance and drains accepted work first. The next installation starts
+the service with the new limit.
+
+Version 0.1 scales across local worker processes. Distributed workers on several machines are not
+implemented yet.
+
+## Spewer keeps delegated work accountable
+
+The frontier harness owns classification, its private continuation, and the final answer. Spewer
+owns accepted work until it can return a terminal receipt.
+
+![A harness adapter stores its continuation while Spewer executes and returns a receipt](assets/tutorial/02-harness-adapter-loop.png)
+
+Four mechanisms make that handoff useful:
+
+- the durable queue keeps accepted tasks after the initiating turn exits;
+- permissions and budgets bound worker authority;
+- the event journal reconstructs state after a restart;
+- receipts identify the capsule, skill, model, usage, artifacts, and verification.
+
+Spewer requeues pristine interrupted work. It escalates work with uncertain external effects
+instead of risking duplicate execution.
+
+Cost stays unknown unless `SPEWER_PRICE_CONFIG` points to a matching versioned price file. Spewer
+never converts missing price data into zero.
+
+## Know what works today
+
+| Capability | Status |
+|---|---|
+| Generic Luna worker through Codex App Server | Implemented |
+| Foreground questions and detached tasks | Implemented |
+| Live generic or specialized capsules | Implemented |
+| Immutable skill binding and receipt evidence | Implemented |
+| Configurable local worker concurrency | Implemented |
+| Reference Codex delegation skill | Implemented |
+| Complete durable Play adapter | Implemented |
+| Production open-weights engine | Planned for CP18 |
+| Native integrations for other frontier harnesses | Planned |
+| Distributed multi-machine workers | Not implemented |
+
+Inferred `spewer ask` tasks use read-only filesystem authority and deny network access by default.
+Codex App Server is the only production worker engine today.
+
+## Go deeper only when you need to
+
+- [How Spewer works](docs/how_it_works.md) explains the product, every component, and both complete
+  user flows.
+- [Task protocol](docs/03-task-protocol.md) defines requests, events, receipts, and delivery.
+- [Durability](docs/05-durability.md) and [crash closure](docs/13-crash-closure.md) explain restart
+  behavior.
+- [Security](docs/07-security.md) defines permissions, approvals, and side-effect boundaries.
+- [Frontier integration](docs/17-frontier-integration.md) defines the small harness client.
+- [Play integration](docs/10-play-integration.md) defines the first complete durable parent
+  adapter.
+- [Design index](docs/readme.md) links every accepted contract and decision.
+- [Checkpoint evidence](artifacts/checkpoints) records the proof through CP17.
+
+## Build and verify Spewer
+
+Spewer forbids unsafe code, panic primitives, unchecked indexing, and unchecked arithmetic.
+Handwritten Rust files stay at or below 500 physical lines.
 
 Run the complete local gate before committing:
 
@@ -245,21 +224,6 @@ $ ./scripts/check-panic-primitives.sh
 $ ./scripts/check-codex-schema.sh
 ```
 
-Checkpoint evidence lives under [`artifacts/checkpoints`](artifacts/checkpoints). CP0 through CP15 have passed.
-
-## Know the current boundary
-
-Spewer is usable software with a narrow first production path:
-
-- Codex App Server is the only production engine.
-- The local service requires Unix process and socket support.
-- Inferred `ask` tasks always use read-only filesystem authority.
-- Cost stays unknown without a matching versioned price configuration.
-- The CLI and JSON service protocol are authoritative.
-- MCP can project the same operations later without replacing the protocol.
-
-The next engine can be local or remote. It must satisfy the same task, event, checkpoint, receipt, cancellation, and identity contracts.
-
 ## License
 
-Apache-2.0. See [`LICENSE`](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
