@@ -42,6 +42,8 @@ pub mod config;
 pub mod control;
 /// Typed failures returned by Spewer operations.
 pub mod error;
+/// Reusable discovery, delegation, checking, and cancellation client.
+pub mod harness;
 
 mod journal;
 mod receipt;

@@ -30,6 +30,22 @@ fn parses_execution_commands() -> Result<(), Box<dyn std::error::Error>> {
     );
     assert_eq!(parse(args(&["capsule", "list"]))?, CliCommand::CapsuleList);
     assert_eq!(
+        parse(args(&["delegate", "task.json", "--capsule", "default"]))?,
+        CliCommand::Delegate {
+            path: PathBuf::from("task.json"),
+            capsule_id: "default".to_owned(),
+            socket: None,
+        }
+    );
+    assert_eq!(
+        parse(args(&["check", "tsk_one", "--after", "8"]))?,
+        CliCommand::Check {
+            task_id: "tsk_one".to_owned(),
+            after: 8,
+            socket: None,
+        }
+    );
+    assert_eq!(
         parse(args(&["init", "--workspace", "/tmp/example"]))?,
         CliCommand::Init {
             workspace: Some(PathBuf::from("/tmp/example")),

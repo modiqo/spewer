@@ -19,6 +19,14 @@ printf '%s\n' '{"id":1,"result":{"ready":true}}'
 IFS= read -r initialized
 IFS= read -r models
 printf '%s\n' '{"id":2,"result":{"data":[{"id":"gpt-5.6-luna","model":"gpt-5.6-luna"}]}}'
+if ! IFS= read -r thread; then exit 0; fi
+printf '%s\n' '{"id":3,"result":{"thread":{"id":"thr_capsule","sessionId":"ses_capsule"}}}'
+IFS= read -r turn
+printf '%s\n' "$turn" > "$FAKE_TURN_PATH"
+printf '%s\n' '{"id":4,"result":{"turn":{"id":"turn_capsule","status":"inProgress","items":[],"error":null}}}'
+printf '%s\n' '{"method":"turn/started","params":{"threadId":"thr_capsule","turn":{"id":"turn_capsule","status":"inProgress"}}}'
+printf '%s\n' '{"method":"item/completed","params":{"threadId":"thr_capsule","turnId":"turn_capsule","item":{"id":"item_capsule","type":"agentMessage","status":"completed","text":"Specialized capsule completed the turn."}}}'
+printf '%s\n' '{"method":"turn/completed","params":{"threadId":"thr_capsule","turn":{"id":"turn_capsule","status":"completed","items":[],"error":null}}}'
 while IFS= read -r line; do :; done
 "#;
 
@@ -29,6 +37,7 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
     let workspace = root.join("workspace");
     std::fs::create_dir_all(&home)?;
     std::fs::create_dir_all(&workspace)?;
+    initialize_repository(&workspace)?;
     let fake = root.join("codex-fake");
     std::fs::write(&fake, FAKE_CODEX)?;
     std::fs::set_permissions(&fake, Permissions::from_mode(0o700))?;
@@ -90,6 +99,7 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
         Some("review")
     );
     assert!(after.pointer("/capsules/0/skill/source").is_none());
+    dispatch_specialized(&home, &fake, &workspace, &after)?;
 
     let repeated = run_cli(
         &home,
@@ -128,6 +138,97 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
     Ok(())
 }
 
+fn dispatch_specialized(
+    home: &Path,
+    fake: &Path,
+    workspace: &Path,
+    capabilities: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let capsule = capabilities
+        .pointer("/capsules/0")
+        .ok_or("specialized capsule missing")?;
+    let task = serde_json::json!({
+        "protocol_version": "0.1",
+        "idempotency_key": "capsule-dispatch-e2e",
+        "objective": "Apply the bound review skill without changing files.",
+        "acceptance": ["The specialized turn completes"],
+        "workspace": {"path": workspace},
+        "permissions": {
+            "filesystem": "read-only",
+            "network": "deny",
+            "commands": "engine-policy",
+            "environment_allowlist": ["FAKE_TURN_PATH"]
+        },
+        "budgets": {
+            "wall_seconds": 30,
+            "tokens": 1000,
+            "tool_calls": 10,
+            "retries": 0,
+            "cost_usd": 1.0
+        },
+        "engine": {"kind": "codex-app-server", "model": "ignored-by-delegate"},
+        "callback": {"mode": "poll", "consumer_id": "capsule-test"}
+    });
+    let task_path = home.join("capsule-task.json");
+    std::fs::write(&task_path, serde_json::to_vec_pretty(&task)?)?;
+    let missing = run_cli(
+        home,
+        fake,
+        &["delegate", path(&task_path)?, "--capsule", "missing"],
+    )?;
+    assert!(!missing.status.success());
+    let delegated = run_cli(
+        home,
+        fake,
+        &["delegate", path(&task_path)?, "--capsule", "default"],
+    )?;
+    ensure_success(&delegated, "capsule delegate")?;
+    let delegation: serde_json::Value = serde_json::from_slice(&delegated.stdout)?;
+    assert_eq!(
+        delegation
+            .pointer("/capsule/revision")
+            .and_then(serde_json::Value::as_str),
+        capsule.get("revision").and_then(serde_json::Value::as_str)
+    );
+    let task_id = delegation
+        .pointer("/handle/task_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("task id missing")?;
+    let result = wait_check(home, fake, task_id)?;
+    assert_eq!(
+        result
+            .pointer("/result/message/receipt/capsule/skill/name")
+            .and_then(serde_json::Value::as_str),
+        Some("review")
+    );
+    assert_eq!(
+        result
+            .pointer("/result/message/receipt/capsule/revision")
+            .and_then(serde_json::Value::as_str),
+        capsule.get("revision").and_then(serde_json::Value::as_str)
+    );
+    let turn = std::fs::read_to_string(home.join("turn.json"))?;
+    assert!(turn.contains("Review."));
+    Ok(())
+}
+
+fn wait_check(
+    home: &Path,
+    fake: &Path,
+    task_id: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    for _attempt in 0..200 {
+        let output = run_cli(home, fake, &["check", task_id, "--after", "0"])?;
+        ensure_success(&output, "capsule check")?;
+        let result: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        if result.get("ready") == Some(&serde_json::Value::Bool(true)) {
+            return Ok(result);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Err("capsule task did not finish".into())
+}
+
 fn assert_install_report(
     report: &serde_json::Value,
     config_created: bool,
@@ -137,6 +238,12 @@ fn assert_install_report(
     if report.get("ready") != Some(&serde_json::Value::Bool(true))
         || report.get("config_created") != Some(&serde_json::Value::Bool(config_created))
         || report.pointer("/service/started") != Some(&serde_json::Value::Bool(service_started))
+        || report.pointer("/frontier_skill/created")
+            != Some(&serde_json::Value::Bool(config_created))
+        || report
+            .pointer("/frontier_skill/path")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(|path| !path.ends_with("skills/spewer-delegation/SKILL.md"))
         || report
             .pointer("/capsules/capsules/0/kind")
             .and_then(serde_json::Value::as_str)
@@ -157,9 +264,29 @@ fn run_cli(home: &Path, fake: &Path, arguments: &[&str]) -> std::io::Result<Outp
     Command::new(env!("CARGO_BIN_EXE_spewer"))
         .args(arguments)
         .env("HOME", home)
+        .env("CODEX_HOME", home.join(".codex"))
         .env("SPEWER_HOME", home)
         .env("SPEWER_CODEX_BIN", fake)
+        .env("FAKE_TURN_PATH", home.join("turn.json"))
         .output()
+}
+
+fn initialize_repository(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    git(path, &["init", "-q"])?;
+    git(path, &["config", "user.email", "spewer@example.invalid"])?;
+    git(path, &["config", "user.name", "Spewer Test"])?;
+    std::fs::write(path.join("README.md"), "fixture\n")?;
+    git(path, &["add", "README.md"])?;
+    git(path, &["commit", "-qm", "fixture"])
+}
+
+fn git(path: &Path, arguments: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(arguments)
+        .output()?;
+    ensure_success(&output, "git")
 }
 
 fn ensure_success(output: &Output, command: &str) -> Result<(), Box<dyn std::error::Error>> {

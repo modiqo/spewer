@@ -199,6 +199,8 @@ async fn handle_command(
                 return Ok(());
             }
             request.validate()?;
+            crate::capsule::resolve_external_request(&mut request)?;
+            request.validate()?;
             let task_id = match &request.task_id {
                 Some(task_id) => task_id.clone(),
                 None => new_id("tsk")?,

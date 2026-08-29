@@ -399,6 +399,62 @@ CP15 is complete. Its one-command installation, capsule lifecycle, dynamic looku
 - **CP16 — capsule-aware dispatch:** bind task acceptance to a capsule and advertised skill revision, then record that evidence in attempts and receipts.
 - **CP17 — frontier integration kit:** ship the three-tool integration skill, reusable adapter client, durable inbox primitives, and conformance fixtures.
 - **CP18 — second production worker:** implement an OpenCode or local open-weights engine package through the accepted engine adapter contract.
-- **CP19 — evidence-guided moderation:** add verifier and frontier-acceptance evidence, explicit routing policy, and the complete install-to-delegation user journey.
+- **CP19 — evidence-guided moderation:** add verifier and frontier-acceptance evidence, explicit routing policy, and the complete install-to-delegation flow.
 
 Only one checkpoint is active at a time. Later checkpoint detail becomes normative when that checkpoint opens.
+
+## CP16 binds execution to one capsule revision
+
+**Objective:** Make a discovered capsule selection durable, executable, and visible in the terminal receipt.
+
+**Deliverables:**
+
+- An optional capsule selection in the version 0.1 task request.
+- A content revision for each advertised capsule.
+- Acceptance-time validation of capsule identity, revision, engine, model, and bound skill digest.
+- A durable snapshot of specialized skill instructions before the task enters the queue.
+- Exact skill instructions in the worker prompt without exposing local source paths.
+- Capsule and skill evidence in every receipt for a capsule-bound task.
+- Backward compatibility for version 0.1 tasks that omit a capsule.
+
+**Acceptance:**
+
+- A current generic or specialized capsule can be selected and accepted.
+- A stale capsule revision fails before task acceptance.
+- A changed skill file fails until the owner binds it again.
+- Unbinding or editing a skill after acceptance cannot change the queued task snapshot.
+- A specialized worker receives the exact bound instructions.
+- Its receipt identifies the capsule revision, kind, skill revision, and skill digest.
+- Existing version 0.1 task fixtures remain valid without a capsule.
+
+**Exit gate:** Protocol, stale-binding, prompt, receipt, recovery, compatibility, and end-to-end tests pass in one CP16 packet.
+
+CP16 is complete. Its capsule-selection, immutable skill snapshot, prompt, receipt, stale-binding, compatibility, and end-to-end evidence are recorded under `artifacts/checkpoints/CP16/README.md`.
+
+## CP17 gives frontier harnesses one small integration surface
+
+**Objective:** Let a frontier harness discover and delegate to Spewer without implementing its control protocol from scratch.
+
+**Deliverables:**
+
+- A public harness client for discovery, capsule-bound delegation, combined checking, and cancellation.
+- `spewer delegate` and `spewer check` CLI projections; existing `spewer cancel` completes the three-action model surface.
+- Automatic live capability lookup inside delegation.
+- Structured outputs that retain task, cursor, capsule, receipt, and acknowledgement identities.
+- A concise `spewer-delegation` Agent Skill for Codex and other compatible harnesses.
+- Install-time placement of the reference Codex skill without overwriting a changed user file.
+- Adapter conformance tests against a running service.
+
+**Acceptance:**
+
+- Delegation selects the requested current capsule and commits one task.
+- A stale or missing capsule fails before acceptance.
+- Check returns the projection, later events, next cursor, polling delay, and stable terminal message in one response.
+- Cancel remains idempotent through the same client.
+- The skill tells the frontier model to retain classification, final judgment, and receipt application.
+- Repeating installation preserves an identical installed skill and rejects a conflicting file.
+- A harness can complete discovery through receipt retrieval without parsing socket frames itself.
+
+**Exit gate:** Client, CLI, skill validation, installation, conformance, help, quality, and end-to-end tests pass in one CP17 packet.
+
+CP17 is complete. Its reusable harness client, three-action CLI, reference Codex skill, conflict-safe installation, help, conformance, and end-to-end evidence are recorded under `artifacts/checkpoints/CP17/README.md`.

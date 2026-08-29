@@ -12,6 +12,7 @@
     "acceptance": {"type": "array", "items": {"type": "string"}, "maxItems": 256},
     "workspace": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string", "minLength": 1}, "base_revision": {"type": ["string", "null"]}}, "additionalProperties": true},
     "context": {"type": "object"},
+    "capsule": {"type": ["object", "null"], "required": ["id", "revision"], "properties": {"id": {"type": "string", "minLength": 1, "maxLength": 64}, "revision": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}, "additionalProperties": false},
     "permissions": {"type": "object"},
     "budgets": {"type": "object"},
     "engine": {"type": "object", "required": ["kind"], "properties": {"kind": {"type": "string"}, "model": {"type": "string", "default": "gpt-5.6-luna"}}, "additionalProperties": true},

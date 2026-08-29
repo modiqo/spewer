@@ -4,7 +4,7 @@ This sequence starts with Spewer's purpose, fixes the public contracts, and ends
 
 Run the [README tutorial](../README.md) first. It gives you a working delegated task before these documents explain the machinery.
 
-Read [How Spewer works](how_it_works.md) for the current checkpoint. It joins the implemented system, planned capsule discovery, pluggable engines, and target user experience.
+Read [How Spewer works](how_it_works.md) for the current product. It joins implemented capsule-bound delegation, pluggable engines, and the target user experience.
 
 ## Stage 1 fixes the product boundary
 
@@ -48,6 +48,8 @@ Read these documents before adding a harness, transport, or engine:
 | 13 | [Crash closure](13-crash-closure.md) | How does service and delivery recovery fail safely? | Explanation |
 | 14 | [Play adapter](14-play-adapter.md) | How does the first durable adapter store and apply a receipt? | Reference |
 | 15 | [Installation and capsules](15-install-and-capsules.md) | How does one command create and advertise a useful worker? | Reference |
+| 16 | [Capsule-bound execution](16-capsule-bound-execution.md) | How does discovery bind one immutable worker configuration to a task? | Reference |
+| 17 | [Frontier integration](17-frontier-integration.md) | Which small client and tool surface should a frontier harness use? | Reference |
 
 ## Decisions preserve the reasons
 
@@ -60,6 +62,8 @@ Each accepted decision records one architectural commitment:
 5. [Keep one service protocol behind thin harness adapters](decisions/adr-0005-harness-service-boundary.md).
 6. [Pair durable dispatch with a parent inbox](decisions/adr-0006-durable-dispatch-and-inbox.md).
 7. [Keep capsule manifests durable and capability lookup live](decisions/adr-0007-live-capsule-catalog.md).
+8. [Snapshot a selected capsule before acceptance](decisions/adr-0008-snapshot-capsule-before-acceptance.md).
+9. [Expose three frontier actions over one reusable client](decisions/adr-0009-three-action-frontier-surface.md).
 
 ## Status words carry fixed meaning
 

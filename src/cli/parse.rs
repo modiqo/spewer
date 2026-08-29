@@ -1,14 +1,17 @@
 //! Strict command-line argument parsing.
 
+mod harness;
 mod question;
 mod service;
 mod setup;
 #[cfg(test)]
 mod tests;
+mod topic;
 
 use crate::error::{Error, ErrorKind, Result};
 use lexopt::prelude::*;
 use std::path::PathBuf;
+pub(super) use topic::HelpTopic;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum CliCommand {
@@ -43,6 +46,16 @@ pub(super) enum CliCommand {
     },
     Submit {
         path: PathBuf,
+        socket: Option<PathBuf>,
+    },
+    Delegate {
+        path: PathBuf,
+        capsule_id: String,
+        socket: Option<PathBuf>,
+    },
+    Check {
+        task_id: String,
+        after: u64,
         socket: Option<PathBuf>,
     },
     Load {
@@ -86,121 +99,6 @@ pub(super) enum CliCommand {
     Version,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum HelpTopic {
-    Install,
-    Capsule,
-    Init,
-    Ask,
-    Doctor,
-    Run,
-    Serve,
-    Submit,
-    Load,
-    Stop,
-    Capabilities,
-    Observe,
-    Result,
-    Cancel,
-    Status,
-    Tail,
-    Rebuild,
-    Recover,
-    Resume,
-    Outbox,
-    Ack,
-}
-
-impl HelpTopic {
-    #[cfg(test)]
-    pub(super) const ALL: [Self; 21] = [
-        Self::Install,
-        Self::Capsule,
-        Self::Init,
-        Self::Ask,
-        Self::Doctor,
-        Self::Run,
-        Self::Serve,
-        Self::Submit,
-        Self::Load,
-        Self::Stop,
-        Self::Capabilities,
-        Self::Observe,
-        Self::Result,
-        Self::Cancel,
-        Self::Status,
-        Self::Tail,
-        Self::Rebuild,
-        Self::Recover,
-        Self::Resume,
-        Self::Outbox,
-        Self::Ack,
-    ];
-
-    fn parse(value: &std::ffi::OsStr) -> Result<Self> {
-        match value.to_str() {
-            Some("install") => Ok(Self::Install),
-            Some("capsule") => Ok(Self::Capsule),
-            Some("init") => Ok(Self::Init),
-            Some("ask") => Ok(Self::Ask),
-            Some("doctor") => Ok(Self::Doctor),
-            Some("run") => Ok(Self::Run),
-            Some("serve") => Ok(Self::Serve),
-            Some("submit") => Ok(Self::Submit),
-            Some("load") => Ok(Self::Load),
-            Some("stop") => Ok(Self::Stop),
-            Some("capabilities") => Ok(Self::Capabilities),
-            Some("observe") => Ok(Self::Observe),
-            Some("result") => Ok(Self::Result),
-            Some("cancel") => Ok(Self::Cancel),
-            Some("status") => Ok(Self::Status),
-            Some("tail") => Ok(Self::Tail),
-            Some("rebuild") => Ok(Self::Rebuild),
-            Some("recover") => Ok(Self::Recover),
-            Some("resume") => Ok(Self::Resume),
-            Some("outbox") => Ok(Self::Outbox),
-            Some("ack") => Ok(Self::Ack),
-            Some(other) => Err(Error::new(
-                ErrorKind::InvalidInput,
-                format!("unknown help topic {other}"),
-            )),
-            None => Err(Error::new(
-                ErrorKind::InvalidInput,
-                "help topic is not valid UTF-8",
-            )),
-        }
-    }
-}
-
-impl std::fmt::Display for HelpTopic {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            Self::Install => "install",
-            Self::Capsule => "capsule",
-            Self::Init => "init",
-            Self::Ask => "ask",
-            Self::Doctor => "doctor",
-            Self::Run => "run",
-            Self::Serve => "serve",
-            Self::Submit => "submit",
-            Self::Load => "load",
-            Self::Stop => "stop",
-            Self::Capabilities => "capabilities",
-            Self::Observe => "observe",
-            Self::Result => "result",
-            Self::Cancel => "cancel",
-            Self::Status => "status",
-            Self::Tail => "tail",
-            Self::Rebuild => "rebuild",
-            Self::Recover => "recover",
-            Self::Resume => "resume",
-            Self::Outbox => "outbox",
-            Self::Ack => "ack",
-        };
-        formatter.write_str(name)
-    }
-}
-
 pub(super) fn parse(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> Result<CliCommand> {
     let mut parser = lexopt::Parser::from_args(arguments);
     let Some(argument) = next(&mut parser)? else {
@@ -215,6 +113,8 @@ pub(super) fn parse(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> 
         Value(value) if value == "run" => parse_run(&mut parser),
         Value(value) if value == "serve" => service::parse_serve(&mut parser),
         Value(value) if value == "submit" => service::parse_submit(&mut parser),
+        Value(value) if value == "delegate" => harness::parse_delegate(&mut parser),
+        Value(value) if value == "check" => harness::parse_check(&mut parser),
         Value(value) if value == "load" => {
             service::parse_socket_command(&mut parser, "load", HelpTopic::Load, |socket| {
                 CliCommand::Load { socket }

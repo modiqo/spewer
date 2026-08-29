@@ -20,7 +20,7 @@ Install Spewer from this checkout:
 $ cargo install --path . --locked
 ```
 
-Prepare an owner-private configuration, the generic Luna capsule, Codex App Server, and the detached service:
+Prepare an owner-private configuration, the generic Luna capsule, the reference Codex delegation skill, Codex App Server, and the detached service:
 
 ```console
 $ spewer install
@@ -64,6 +64,16 @@ $ spewer capsule list
 $ spewer capsule unbind default
 ```
 
+Delegate a complete task through the current live capsule, then check it through the small harness surface:
+
+```console
+$ spewer delegate task.json --capsule default
+$ spewer check tsk_example
+$ spewer cancel tsk_example --reason "the parent no longer needs it"
+```
+
+`delegate` discovers the current capsule and binds its revision before Spewer accepts work. A specialized task snapshots the exact skill instructions, and its receipt identifies the capsule and safe skill evidence.
+
 ## Read the receipt before trusting the answer
 
 Each terminal receipt identifies the requested and observed models. It also records tokens, tool calls, elapsed time, artifacts, and verification evidence.
@@ -96,6 +106,8 @@ The decisions explain why each boundary exists:
 - [ADR-0005 puts one service protocol behind thin adapters](docs/decisions/adr-0005-harness-service-boundary.md).
 - [ADR-0006 closes dispatch and parent-delivery crash windows](docs/decisions/adr-0006-durable-dispatch-and-inbox.md).
 - [ADR-0007 keeps durable capsules behind live capability lookup](docs/decisions/adr-0007-live-capsule-catalog.md).
+- [ADR-0008 snapshots a selected capsule before acceptance](docs/decisions/adr-0008-snapshot-capsule-before-acceptance.md).
+- [ADR-0009 keeps the frontier surface to three actions](docs/decisions/adr-0009-three-action-frontier-surface.md).
 
 ## Run a task without blocking the harness
 

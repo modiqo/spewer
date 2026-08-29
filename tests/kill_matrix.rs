@@ -126,6 +126,7 @@ fn receipt() -> Receipt {
             observed_models: vec!["fake-local".to_owned()],
             version: Some("1".to_owned()),
         },
+        capsule: None,
         final_event_seq: 3,
         completed_at: "2026-08-28T00:00:02Z".to_owned(),
     }

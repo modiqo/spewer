@@ -19,6 +19,7 @@ struct InstallReport {
     config: PathBuf,
     config_created: bool,
     capsules: crate::capsule::CapsuleCatalog,
+    frontier_skill: super::skill_install::SkillInstallReport,
     service: super::service::DetachedReport,
     next: serde_json::Value,
 }
@@ -37,6 +38,7 @@ pub(super) async fn install(
         crate::config::config_path()?
     };
     let _default = crate::capsule::ensure_default()?;
+    let frontier_skill = super::skill_install::install()?;
     let codex_report = doctor(codex).await.map_err(|error| {
         Error::new(
             error.kind(),
@@ -56,11 +58,12 @@ pub(super) async fn install(
         config,
         config_created,
         capsules,
+        frontier_skill,
         service,
         next: json!({
             "discover": ["spewer", "capsule", "list"],
             "ask": ["spewer", "ask", "<question>", "--detach"],
-            "delegate": ["spewer", "capabilities"]
+            "delegate": ["spewer", "delegate", "<task.json>", "--capsule", "default"]
         }),
     };
     println!("{}", serde_json::to_string_pretty(&report)?);

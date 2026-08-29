@@ -46,13 +46,22 @@ Minor versions add optional fields or event types. Major versions may change req
     "kind": "codex-app-server",
     "model": "configured-cheap-model"
   },
+  "capsule": {
+    "id": "default",
+    "revision": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
   "callback": {
-    "mode": "stream"
+    "mode": "stream",
+    "consumer_id": "play"
   }
 }
 ```
 
 The controller rejects a request before creating a worker when required fields fail validation. It records an accepted request before starting an engine.
+
+`capsule` is optional for version 0.1 compatibility. New routing adapters select the ID and revision returned by service capabilities.
+
+Spewer replaces any caller-supplied binding snapshot before acceptance. The accepted request stores the resolved skill instructions for execution and recovery.
 
 ## A task handle makes detachment safe
 
@@ -121,6 +130,17 @@ The parent can disconnect after receiving this handle. It reconnects with `task_
     "kind": "codex-app-server",
     "requested_model": "configured-cheap-model",
     "observed_models": []
+  },
+  "capsule": {
+    "id": "default",
+    "revision": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "kind": "specialized",
+    "skill": {
+      "name": "parser-update",
+      "description": "Update and verify bounded parser changes",
+      "revision": "1",
+      "digest": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    }
   },
   "final_event_seq": 99,
   "completed_at": "2026-08-28T22:02:00Z"

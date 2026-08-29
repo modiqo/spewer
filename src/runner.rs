@@ -1,6 +1,7 @@
 //! One bounded engine run from validated request to receipt.
 
 mod accepted;
+mod request;
 
 pub use accepted::{fail_durable, run_codex_accepted};
 
@@ -58,13 +59,13 @@ pub async fn run_codex_durable(
 }
 
 pub(super) async fn run_codex_inner(
-    request: TaskRequest,
+    mut request: TaskRequest,
     mut config: CodexConfig,
     database: Option<&Database>,
     accepted_task_id: Option<String>,
     accepted_lease_id: Option<String>,
 ) -> Result<RunResult> {
-    request.validate()?;
+    request::resolve(&mut request, accepted_task_id.is_some())?;
     if request.engine.kind != "codex-app-server" {
         return Err(Error::new(
             ErrorKind::InvalidInput,

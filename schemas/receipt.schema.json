@@ -16,9 +16,9 @@
     "verification_waiver": {"type": ["string", "null"]},
     "usage": {"type": "object"},
     "engine": {"type": "object"},
+    "capsule": {"type": ["object", "null"]},
     "final_event_seq": {"type": "integer"},
     "completed_at": {"type": "string"}
   },
   "additionalProperties": true
 }
-

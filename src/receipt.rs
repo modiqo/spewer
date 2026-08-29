@@ -51,6 +51,7 @@ pub(crate) fn build_receipt(
             observed_models: projection.engine.observed_models.clone(),
             version: Some("codex-cli 0.150.1".to_owned()),
         },
+        capsule: crate::capsule::receipt_evidence(request),
         final_event_seq: projection.event_seq,
         completed_at: now()?,
     })
@@ -81,6 +82,7 @@ pub(crate) fn build_failure_receipt(
             observed_models: projection.engine.observed_models.clone(),
             version: None,
         },
+        capsule: crate::capsule::receipt_evidence(request),
         final_event_seq: projection.event_seq,
         completed_at: now()?,
     })

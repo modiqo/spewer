@@ -1,5 +1,10 @@
 //! Durable worker descriptions advertised through live capability lookup.
 
+mod binding;
+mod selection;
+
+pub use selection::{CapsuleBindingSnapshot, CapsuleEvidence, CapsuleRequest};
+
 use crate::error::{Error, ErrorKind, Result};
 use crate::protocol::{DEFAULT_MODEL, EngineRequest};
 use crate::util::{data_root, new_id, sha256};
@@ -70,6 +75,8 @@ pub struct SkillAdvertisement {
 pub struct CapsuleAdvertisement {
     /// Stable capsule identifier.
     pub id: String,
+    /// Content revision used to bind task selection.
+    pub revision: String,
     /// Generic or specialized state derived from the binding.
     pub kind: CapsuleKind,
     /// Human-readable worker purpose.
@@ -87,6 +94,27 @@ pub struct CapsuleCatalog {
     pub revision: String,
     /// Capsules sorted by identifier.
     pub capsules: Vec<CapsuleAdvertisement>,
+}
+
+/// Creates an unbound selection from the current catalog.
+pub fn select(capsule_id: &str) -> Result<CapsuleRequest> {
+    binding::select_at(&catalog_root()?, capsule_id)
+}
+
+pub(crate) fn resolve_external_request(request: &mut crate::protocol::TaskRequest) -> Result<()> {
+    binding::resolve_external_at(&catalog_root()?, request)
+}
+
+pub(crate) fn ensure_request_bound(request: &mut crate::protocol::TaskRequest) -> Result<()> {
+    binding::ensure_bound_at(&catalog_root()?, request)
+}
+
+pub(crate) fn receipt_evidence(request: &crate::protocol::TaskRequest) -> Option<CapsuleEvidence> {
+    request
+        .capsule
+        .as_ref()
+        .and_then(|capsule| capsule.binding.as_ref())
+        .map(|binding| binding.evidence.clone())
 }
 
 /// Ensures the default generic Luna capsule is persisted.
@@ -164,7 +192,10 @@ fn catalog_at(root: &Path) -> Result<CapsuleCatalog> {
         manifests.push(default_manifest());
     }
     manifests.sort_by(|left, right| left.id.cmp(&right.id));
-    let capsules: Vec<_> = manifests.iter().map(advertisement).collect();
+    let capsules = manifests
+        .iter()
+        .map(advertisement)
+        .collect::<Result<Vec<_>>>()?;
     let revision = sha256(&serde_json::to_vec(&capsules)?)?;
     Ok(CapsuleCatalog { revision, capsules })
 }
@@ -290,24 +321,33 @@ fn unquote(value: &str) -> &str {
     }
 }
 
-fn advertisement(manifest: &CapsuleManifest) -> CapsuleAdvertisement {
+fn advertisement(manifest: &CapsuleManifest) -> Result<CapsuleAdvertisement> {
     let skill = manifest.skill.as_ref().map(|binding| SkillAdvertisement {
         name: binding.name.clone(),
         description: binding.description.clone(),
         revision: binding.revision.clone(),
         digest: binding.digest.clone(),
     });
-    CapsuleAdvertisement {
+    let kind = if skill.is_some() {
+        CapsuleKind::Specialized
+    } else {
+        CapsuleKind::Generic
+    };
+    let revision = sha256(&serde_json::to_vec(&(
+        &manifest.id,
+        kind,
+        &manifest.description,
+        &manifest.engine,
+        &skill,
+    ))?)?;
+    Ok(CapsuleAdvertisement {
         id: manifest.id.clone(),
-        kind: if skill.is_some() {
-            CapsuleKind::Specialized
-        } else {
-            CapsuleKind::Generic
-        },
+        revision,
+        kind,
         description: manifest.description.clone(),
         engine: manifest.engine.clone(),
         skill,
-    }
+    })
 }
 
 fn load_manifest(path: &Path) -> Result<CapsuleManifest> {

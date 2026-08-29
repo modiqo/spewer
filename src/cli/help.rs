@@ -1,9 +1,11 @@
 //! Agent-facing command and lifecycle reference.
 
+mod harness;
 mod service;
 mod setup;
 
 use super::parse::HelpTopic;
+use harness::{CHECK, DELEGATE};
 use service::{CANCEL, CAPABILITIES, OBSERVE, RESULT, STATUS};
 use setup::{CAPSULE, INIT, INSTALL};
 
@@ -19,6 +21,8 @@ pub(super) fn render(topic: Option<HelpTopic>) -> String {
         Some(HelpTopic::Run) => RUN,
         Some(HelpTopic::Serve) => SERVE,
         Some(HelpTopic::Submit) => SUBMIT,
+        Some(HelpTopic::Delegate) => DELEGATE,
+        Some(HelpTopic::Check) => CHECK,
         Some(HelpTopic::Load) => LOAD,
         Some(HelpTopic::Stop) => STOP,
         Some(HelpTopic::Capabilities) => CAPABILITIES,
@@ -53,6 +57,7 @@ AGENT ROUTES
   Detached question: serve -> ask --detach -> observe -> result -> ack
   Start service:   doctor -> serve
   Delegate:        capabilities -> submit -> observe -> result -> ack
+  Frontier tool:   delegate -> check -> accept receipt -> ack
   One attached:    doctor -> run -> consume receipt -> ack callback
   Observe service: observe --after <event-cursor> -> result
   After restart:   recover -> status or tail -> resume
@@ -62,6 +67,8 @@ AGENT ROUTES
 COMMON FORMS
   spewer install                          Prepare Codex, capsule, and service.
   spewer capsule list                     Discover generic or specialized workers.
+  spewer delegate <task.json>              Discover, bind, and submit one task.
+  spewer check <task-id>                   Observe progress and retrieve its result.
   spewer init [--overwrite]             Create or replace private defaults.
   spewer ask "<question>"                Wait and return structured JSON.
   spewer ask "<question>" --text         Wait and print an answer-first view.
@@ -77,6 +84,8 @@ COMMANDS
   doctor   Verify Codex App Server before run.
   serve    Run the local turn scheduler and managed App Server workers.
   submit   Commit a task and queue its turn without waiting for completion.
+  delegate Discover a capsule and submit one capsule-bound task.
+  check    Combine observation and terminal result retrieval.
   load     Read scheduler capacity, active turns, and queued turns.
   stop     Stop acceptance and drain the local service.
   capabilities  Read the service operations, limits, and engine kinds.

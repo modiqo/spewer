@@ -163,6 +163,7 @@ fn fixture_receipt() -> Receipt {
             observed_models: vec!["fake".to_owned()],
             version: Some("1".to_owned()),
         },
+        capsule: None,
         final_event_seq: 1,
         completed_at: "2026-08-28T00:00:01Z".to_owned(),
     }

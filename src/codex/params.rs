@@ -62,8 +62,17 @@ fn task_prompt(request: &TaskRequest) -> String {
         .join("\n");
     let files = request.context.files.join(", ");
     let notes = request.context.notes.join("\n");
+    let skill = match request
+        .capsule
+        .as_ref()
+        .and_then(|capsule| capsule.binding.as_ref())
+        .and_then(|binding| binding.instructions.as_deref())
+    {
+        Some(instructions) => format!("\n\nBound skill instructions:\n{instructions}"),
+        None => String::new(),
+    };
     format!(
-        "Objective:\n{}\n\nAcceptance criteria:\n{}\n\nProjected files:\n{}\n\nConstraints:\n{}\n\nWork only inside the supplied repository. Run focused verification when possible. Finish with a concise summary and the verification you ran.",
-        request.objective, acceptance, files, notes
+        "Objective:\n{}\n\nAcceptance criteria:\n{}\n\nProjected files:\n{}\n\nConstraints:\n{}{}\n\nWork only inside the supplied repository. Run focused verification when possible. Finish with a concise summary and the verification you ran.",
+        request.objective, acceptance, files, notes, skill
     )
 }

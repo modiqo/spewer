@@ -52,6 +52,9 @@ pub struct TaskRequest {
     /// Projected context visible to the worker.
     #[serde(default)]
     pub context: TaskContext,
+    /// Optional capsule and exact revision selected after discovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capsule: Option<crate::capsule::CapsuleRequest>,
     /// Authority granted to the worker.
     pub permissions: Permissions,
     /// Hard execution limits.
@@ -90,6 +93,11 @@ impl TaskRequest {
             return Err(ProtocolError::new("workspace.path must be absolute"));
         }
         validate_relative_paths("context.files", &self.context.files)?;
+        if let Some(capsule) = &self.capsule {
+            capsule
+                .validate()
+                .map_err(|error| ProtocolError::new(error.message()))?;
+        }
         validate_relative_paths(
             "permissions.writable_paths",
             &self.permissions.writable_paths,
@@ -473,6 +481,9 @@ pub struct Receipt {
     pub usage: Usage,
     /// Requested and observed engine identity.
     pub engine: ReceiptEngine,
+    /// Capsule and bound skill identity when the task selected one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capsule: Option<crate::capsule::CapsuleEvidence>,
     /// Last committed event covered by the receipt.
     pub final_event_seq: u64,
     /// RFC 3339 completion timestamp.

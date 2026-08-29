@@ -5,6 +5,7 @@ mod parse;
 mod question;
 mod service;
 mod setup;
+mod skill_install;
 
 use crate::codex::{CodexConfig, doctor};
 use crate::error::Result;
@@ -51,6 +52,16 @@ pub async fn run() -> Result<()> {
             detach,
         } => service::serve(max_workers, socket, detach).await?,
         CliCommand::Submit { path, socket } => submit(path, socket).await?,
+        CliCommand::Delegate {
+            path,
+            capsule_id,
+            socket,
+        } => delegate(path, capsule_id, socket).await?,
+        CliCommand::Check {
+            task_id,
+            after,
+            socket,
+        } => check(task_id, after, socket).await?,
         CliCommand::Load { socket } => load(socket).await?,
         CliCommand::Stop { socket } => stop(socket).await?,
         CliCommand::Capabilities { socket } => capabilities(socket).await?,
@@ -110,6 +121,21 @@ async fn submit(path: PathBuf, socket: Option<PathBuf>) -> Result<()> {
     let request = read_request(path).await?;
     let handle = crate::control::submit(socket_path(socket)?, request).await?;
     println!("{}", serde_json::to_string_pretty(&handle)?);
+    Ok(())
+}
+
+async fn delegate(path: PathBuf, capsule_id: String, socket: Option<PathBuf>) -> Result<()> {
+    let request = read_request(path).await?;
+    let client = crate::harness::HarnessClient::new(socket_path(socket)?);
+    let delegation = client.delegate(request, &capsule_id).await?;
+    println!("{}", serde_json::to_string_pretty(&delegation)?);
+    Ok(())
+}
+
+async fn check(task_id: String, after: u64, socket: Option<PathBuf>) -> Result<()> {
+    let client = crate::harness::HarnessClient::new(socket_path(socket)?);
+    let check = client.check(task_id, after).await?;
+    println!("{}", serde_json::to_string_pretty(&check)?);
     Ok(())
 }
 
