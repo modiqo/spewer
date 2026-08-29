@@ -1,14 +1,18 @@
 //! Agent-facing command and lifecycle reference.
 
 mod service;
+mod setup;
 
 use super::parse::HelpTopic;
 use service::{CANCEL, CAPABILITIES, OBSERVE, RESULT, STATUS};
+use setup::{CAPSULE, INIT, INSTALL};
 
 /// Renders global help or one command reference.
 pub(super) fn render(topic: Option<HelpTopic>) -> String {
     let body = match topic {
         None => GLOBAL,
+        Some(HelpTopic::Install) => INSTALL,
+        Some(HelpTopic::Capsule) => CAPSULE,
         Some(HelpTopic::Init) => INIT,
         Some(HelpTopic::Ask) => ASK,
         Some(HelpTopic::Doctor) => DOCTOR,
@@ -44,6 +48,7 @@ TASK STATE
                            \-> input_required | stalled
 
 AGENT ROUTES
+  First run:         install -> capabilities -> ask or delegate
   Attached question: init -> ask -> read structured result
   Detached question: serve -> ask --detach -> observe -> result -> ack
   Start service:   doctor -> serve
@@ -55,6 +60,8 @@ AGENT ROUTES
   Repair state:    rebuild -> status
 
 COMMON FORMS
+  spewer install                          Prepare Codex, capsule, and service.
+  spewer capsule list                     Discover generic or specialized workers.
   spewer init [--overwrite]             Create or replace private defaults.
   spewer ask "<question>"                Wait and return structured JSON.
   spewer ask "<question>" --text         Wait and print an answer-first view.
@@ -63,6 +70,8 @@ COMMON FORMS
   spewer serve --engine codex --foreground  Keep the service attached.
 
 COMMANDS
+  install  Prepare one ready detached Luna worker.
+  capsule  List capsules or bind and unbind a specialized skill.
   init     Write private defaults for inferred question tasks.
   ask      Ask one question through the configured model.
   doctor   Verify Codex App Server before run.
@@ -90,30 +99,6 @@ OUTPUT CONTRACT
 
 LEARN THE NEXT STEP
   Run 'spewer help <command>' for WHEN, STATE, NEXT, OUTPUT, and examples.
-"#;
-
-const INIT: &str = r#"spewer init - create private defaults for one-off questions
-
-USAGE
-  spewer init [--workspace <path>] [--overwrite]
-
-WHEN
-  Use once before 'spewer ask'. The current directory is the default workspace.
-
-STATE
-  no local configuration -> owner-private ~/.spewer/config.json
-  existing configuration -> confirmed replacement | unchanged cancellation
-
-NEXT
-  Review the configuration, then use 'spewer ask "<question>"'.
-  Use '--overwrite' only when the existing defaults should be replaced.
-
-OUTPUT
-  One JSON object with the configuration path and next command.
-
-EXAMPLE
-  spewer init --workspace /absolute/path/to/repository
-  spewer init --overwrite
 "#;
 
 const ASK: &str = r#"spewer ask - infer and run one bounded question task

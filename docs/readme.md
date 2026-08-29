@@ -47,6 +47,7 @@ Read these documents before adding a harness, transport, or engine:
 | 12 | [Harness communication](12-harness-communication.md) | How do harnesses share one service protocol? | Explanation |
 | 13 | [Crash closure](13-crash-closure.md) | How does service and delivery recovery fail safely? | Explanation |
 | 14 | [Play adapter](14-play-adapter.md) | How does the first durable adapter store and apply a receipt? | Reference |
+| 15 | [Installation and capsules](15-install-and-capsules.md) | How does one command create and advertise a useful worker? | Reference |
 
 ## Decisions preserve the reasons
 
@@ -58,6 +59,7 @@ Each accepted decision records one architectural commitment:
 4. [Use minimal Rust with a bounded Tokio shell](decisions/adr-0004-rust-tokio.md).
 5. [Keep one service protocol behind thin harness adapters](decisions/adr-0005-harness-service-boundary.md).
 6. [Pair durable dispatch with a parent inbox](decisions/adr-0006-durable-dispatch-and-inbox.md).
+7. [Keep capsule manifests durable and capability lookup live](decisions/adr-0007-live-capsule-catalog.md).
 
 ## Status words carry fixed meaning
 

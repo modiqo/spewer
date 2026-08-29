@@ -214,12 +214,10 @@ async fn execute(
     handle: &crate::supervisor::SupervisorHandle,
 ) -> (ControlResponse, bool) {
     match request {
-        ControlRequest::Capabilities => (
-            ControlResponse::Capabilities {
-                capabilities: service_capabilities(),
-            },
-            false,
-        ),
+        ControlRequest::Capabilities => match service_capabilities() {
+            Ok(capabilities) => (ControlResponse::Capabilities { capabilities }, false),
+            Err(error) => (error_response(&error), false),
+        },
         ControlRequest::Submit { request } => match handle.submit(*request).await {
             Ok(task) => (ControlResponse::Handle { handle: task }, false),
             Err(error) => (error_response(&error), false),

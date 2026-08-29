@@ -2,6 +2,7 @@
 
 mod question;
 mod service;
+mod setup;
 #[cfg(test)]
 mod tests;
 
@@ -11,6 +12,17 @@ use std::path::PathBuf;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum CliCommand {
+    Install {
+        workspace: Option<PathBuf>,
+        max_workers: usize,
+        skip_codex_install: bool,
+    },
+    CapsuleList,
+    CapsuleBind {
+        capsule_id: String,
+        skill: PathBuf,
+    },
+    CapsuleUnbind(String),
     Init {
         workspace: Option<PathBuf>,
         overwrite: bool,
@@ -76,6 +88,8 @@ pub(super) enum CliCommand {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum HelpTopic {
+    Install,
+    Capsule,
     Init,
     Ask,
     Doctor,
@@ -99,7 +113,9 @@ pub(super) enum HelpTopic {
 
 impl HelpTopic {
     #[cfg(test)]
-    pub(super) const ALL: [Self; 19] = [
+    pub(super) const ALL: [Self; 21] = [
+        Self::Install,
+        Self::Capsule,
         Self::Init,
         Self::Ask,
         Self::Doctor,
@@ -123,6 +139,8 @@ impl HelpTopic {
 
     fn parse(value: &std::ffi::OsStr) -> Result<Self> {
         match value.to_str() {
+            Some("install") => Ok(Self::Install),
+            Some("capsule") => Ok(Self::Capsule),
             Some("init") => Ok(Self::Init),
             Some("ask") => Ok(Self::Ask),
             Some("doctor") => Ok(Self::Doctor),
@@ -157,6 +175,8 @@ impl HelpTopic {
 impl std::fmt::Display for HelpTopic {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
+            Self::Install => "install",
+            Self::Capsule => "capsule",
             Self::Init => "init",
             Self::Ask => "ask",
             Self::Doctor => "doctor",
@@ -187,6 +207,8 @@ pub(super) fn parse(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> 
         return Ok(CliCommand::Help(None));
     };
     match argument {
+        Value(value) if value == "install" => setup::parse_install(&mut parser),
+        Value(value) if value == "capsule" => setup::parse_capsule(&mut parser),
         Value(value) if value == "init" => question::parse_init(&mut parser),
         Value(value) if value == "ask" => question::parse_ask(&mut parser),
         Value(value) if value == "doctor" => parse_doctor(&mut parser),

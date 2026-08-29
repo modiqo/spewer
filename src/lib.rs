@@ -30,6 +30,8 @@ pub mod telemetry;
 /// Isolated Git worktree preparation and artifact capture.
 pub mod workspace;
 
+/// Durable generic and skill-specialized worker descriptions.
+pub mod capsule;
 /// Command-line parsing and dispatch.
 pub mod cli;
 /// Codex App Server process and protocol integration.

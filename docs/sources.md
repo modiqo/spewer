@@ -6,6 +6,7 @@ Retrieved: 2026-08-29
 
 ## Official OpenAI documentation
 
+- [Codex CLI installation](https://learn.chatgpt.com/docs/codex/cli) establishes the supported standalone installer and interactive sign-in flow used by `spewer install`.
 - [Codex App Server](https://developers.openai.com/codex/app-server/) establishes the product purpose, open-source implementation, transports, JSON-RPC schema, lifecycle, generated schemas, events, approvals, model discovery, and recovery methods.
 - [Codex SDK](https://developers.openai.com/codex/sdk/) establishes the supported programmatic path for starting, continuing, and resuming Codex threads.
 - [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive/) establishes the JSONL automation surface used by the reduced-capability adapter.

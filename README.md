@@ -12,7 +12,7 @@ Neither endpoint is fixed. Another harness can be the parent, and another engine
 
 ## Run one bounded task
 
-You need macOS or Linux, Rust 1.96 or newer, Git, and an authenticated Codex CLI.
+You need macOS or Linux, Rust 1.96 or newer, and Git. `spewer install` checks for Codex CLI and uses its official installer when needed.
 
 Install Spewer from this checkout:
 
@@ -20,23 +20,24 @@ Install Spewer from this checkout:
 $ cargo install --path . --locked
 ```
 
-Create an owner-private configuration and verify Codex App Server:
+Prepare an owner-private configuration, the generic Luna capsule, Codex App Server, and the detached service:
 
 ```console
-$ spewer init
-$ spewer doctor --engine codex
+$ spewer install
 ```
 
-`spewer init` writes `~/.spewer/config.json`. The defaults choose Luna, deny network access, and make inferred question tasks read-only.
+If Codex needs authentication, run `codex` once to sign in, then repeat `spewer install`. The defaults choose Luna, deny network access, and make inferred question tasks read-only.
 
-Start one background worker. The command waits for readiness, prints structured JSON, and returns immediately.
+The install command waits for readiness, prints structured JSON, and returns immediately. Repeating it preserves the configuration and reuses the running service.
 
 ```console
-$ spewer serve --engine codex --max-workers 1
+$ spewer install --max-workers 1
 {
   "ready": true,
-  "mode": "detached",
-  "max_workers": 1
+  "capsules": {
+    "capsules": [{"id": "default", "kind": "generic"}]
+  },
+  "service": {"ready": true, "mode": "detached"}
 }
 ```
 
@@ -54,6 +55,14 @@ spewer: status=completed model=gpt-5.6-luna ... tools=0 ... cost=unknown
 ```
 
 Use `spewer init --overwrite` to replace an existing configuration. Spewer asks for confirmation before it writes.
+
+Bind a skill when the same capsule should advertise specialized work. The running service exposes the change on its next capability lookup.
+
+```console
+$ spewer capsule bind default ./path/to/skill
+$ spewer capsule list
+$ spewer capsule unbind default
+```
 
 ## Read the receipt before trusting the answer
 
@@ -86,6 +95,7 @@ The decisions explain why each boundary exists:
 - [ADR-0004 keeps Rust and Tokio deliberately small](docs/decisions/adr-0004-rust-tokio.md).
 - [ADR-0005 puts one service protocol behind thin adapters](docs/decisions/adr-0005-harness-service-boundary.md).
 - [ADR-0006 closes dispatch and parent-delivery crash windows](docs/decisions/adr-0006-durable-dispatch-and-inbox.md).
+- [ADR-0007 keeps durable capsules behind live capability lookup](docs/decisions/adr-0007-live-capsule-catalog.md).
 
 ## Run a task without blocking the harness
 
@@ -223,7 +233,7 @@ $ ./scripts/check-panic-primitives.sh
 $ ./scripts/check-codex-schema.sh
 ```
 
-Checkpoint evidence lives under [`artifacts/checkpoints`](artifacts/checkpoints). CP0 through CP14 have passed.
+Checkpoint evidence lives under [`artifacts/checkpoints`](artifacts/checkpoints). CP0 through CP15 have passed.
 
 ## Know the current boundary
 

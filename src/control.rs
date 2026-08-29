@@ -8,6 +8,7 @@ pub use unix::{
     LocalService, acknowledge, cancel, capabilities, load, observe, result, stop, submit,
 };
 
+use crate::capsule::CapsuleAdvertisement;
 use crate::error::{ErrorKind, Result};
 use crate::protocol::{TaskHandle, TaskRequest};
 use crate::store::{CancelOutcome, Observation, TaskResult};
@@ -19,7 +20,7 @@ use std::path::PathBuf;
 pub const MAX_CONTROL_BYTES: u64 = 1_048_576;
 
 /// Features implemented by this service version.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ServiceCapabilities {
     /// Spewer task protocol version.
     pub protocol_version: String,
@@ -35,11 +36,16 @@ pub struct ServiceCapabilities {
     pub cancellation: bool,
     /// Whether callers can replay events from a durable cursor.
     pub cursor_replay: bool,
+    /// Content revision of the live capsule catalog.
+    pub capsule_revision: String,
+    /// Generic and skill-specialized workers available now.
+    pub capsules: Vec<CapsuleAdvertisement>,
 }
 
-/// Returns compile-time capabilities for the current service protocol.
-pub fn service_capabilities() -> ServiceCapabilities {
-    ServiceCapabilities {
+/// Returns stable protocol features plus the live capsule catalog.
+pub fn service_capabilities() -> Result<ServiceCapabilities> {
+    let catalog = crate::capsule::catalog()?;
+    Ok(ServiceCapabilities {
         protocol_version: crate::protocol::PROTOCOL_VERSION.to_owned(),
         operations: [
             "capabilities",
@@ -58,7 +64,9 @@ pub fn service_capabilities() -> ServiceCapabilities {
         max_control_bytes: MAX_CONTROL_BYTES,
         cancellation: true,
         cursor_replay: true,
-    }
+        capsule_revision: catalog.revision,
+        capsules: catalog.capsules,
+    })
 }
 
 /// Returns the default local control socket path.

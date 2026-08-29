@@ -365,3 +365,40 @@ CP13 is complete.
 **Exit gate:** Crash, restart, adapter conformance, quality, and local end-to-end evidence pass in one CP14 packet.
 
 CP14 is complete. Its hard-crash, Play adapter, full quality, and live Luna evidence are recorded under `artifacts/checkpoints/CP14/README.md` in the Spewer repository.
+
+## CP15 makes a useful worker one command away
+
+**Objective:** Install one ready local service and let harnesses discover whether its default capsule is generic or skill-specialized.
+
+**Deliverables:**
+
+- `spewer install` checks or installs the supported Codex CLI, initializes private defaults, creates the default Luna capsule, verifies App Server, and starts the detached service.
+- A durable, owner-private capsule manifest with atomic bind and unbind operations.
+- Skill identity, revision, and content digest derived from a bound `SKILL.md`.
+- Live capsule advertisements in the existing service capability response.
+- A deterministic capability content revision for adapter cache invalidation.
+- Lifecycle-directed help for installation and capsule management.
+
+**Acceptance:**
+
+- A ready machine reaches a detached Luna service with one command.
+- A missing Codex CLI uses the official installer unless the caller opts out.
+- Authentication failure gives one exact recovery action and never reports readiness.
+- A new installation advertises one generic `default` capsule.
+- Binding a skill changes that capsule to `specialized`; unbinding restores `generic`.
+- Capability lookup observes a binding change without restarting the service.
+- Capsule files and directories use owner-only permissions on Unix.
+- Repeating installation does not replace an existing local configuration or start a second service.
+
+**Exit gate:** Unit, CLI, capability lookup, private-file, quality, and local end-to-end evidence pass in one CP15 packet.
+
+CP15 is complete. Its one-command installation, capsule lifecycle, dynamic lookup, quality-gate, and live Codex handshake evidence are recorded under `artifacts/checkpoints/CP15/README.md`.
+
+## The next adoption checkpoints remove the remaining aspirations
+
+- **CP16 — capsule-aware dispatch:** bind task acceptance to a capsule and advertised skill revision, then record that evidence in attempts and receipts.
+- **CP17 — frontier integration kit:** ship the three-tool integration skill, reusable adapter client, durable inbox primitives, and conformance fixtures.
+- **CP18 — second production worker:** implement an OpenCode or local open-weights engine package through the accepted engine adapter contract.
+- **CP19 — evidence-guided moderation:** add verifier and frontier-acceptance evidence, explicit routing policy, and the complete install-to-delegation user journey.
+
+Only one checkpoint is active at a time. Later checkpoint detail becomes normative when that checkpoint opens.

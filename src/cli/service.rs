@@ -4,7 +4,8 @@ use crate::codex::CodexConfig;
 use crate::error::{Error, ErrorKind, Result};
 use crate::store::Database;
 use crate::supervisor::{SupervisorConfig, SupervisorLoad};
-use serde_json::json;
+use serde::Serialize;
+use serde_json::{Value, json};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,13 +18,16 @@ const STARTUP_POLL: Duration = Duration::from_millis(20);
 pub(super) async fn serve(max_workers: usize, socket: Option<PathBuf>, detach: bool) -> Result<()> {
     let path = super::socket_path(socket)?;
     if detach {
-        return start_detached(max_workers, path).await;
+        let report = ensure_detached(max_workers, path).await?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
     }
     run_foreground(max_workers, path).await
 }
 
 async fn run_foreground(max_workers: usize, path: PathBuf) -> Result<()> {
     detach_session_if_requested()?;
+    let _capsule = crate::capsule::ensure_default()?;
     let database = Database::open(Database::default_path()?).await?;
     let service = crate::control::LocalService::bind(
         path,
@@ -45,9 +49,21 @@ async fn run_foreground(max_workers: usize, path: PathBuf) -> Result<()> {
     service.run().await
 }
 
-async fn start_detached(max_workers: usize, path: PathBuf) -> Result<()> {
+#[derive(Debug, Serialize)]
+pub(super) struct DetachedReport {
+    ready: bool,
+    mode: &'static str,
+    started: bool,
+    pid: Option<u32>,
+    socket: PathBuf,
+    log: Option<PathBuf>,
+    load: SupervisorLoad,
+    next: Value,
+}
+
+pub(super) async fn ensure_detached(max_workers: usize, path: PathBuf) -> Result<DetachedReport> {
     if let Ok(load) = crate::control::load(path.clone()).await {
-        return print_detached(false, None, &path, None, &load);
+        return Ok(detached_report(false, None, path, None, load));
     }
 
     let log_path = crate::util::data_root()?.join("spewer-service.log");
@@ -59,7 +75,7 @@ async fn start_detached(max_workers: usize, path: PathBuf) -> Result<()> {
     for _attempt in 0..STARTUP_ATTEMPTS {
         ensure_running(&mut child, &log_path)?;
         if let Ok(load) = crate::control::load(path.clone()).await {
-            return print_detached(true, Some(pid), &path, Some(&log_path), &load);
+            return Ok(detached_report(true, Some(pid), path, Some(log_path), load));
         }
         tokio::time::sleep(STARTUP_POLL).await;
     }
@@ -174,30 +190,26 @@ fn set_private_file(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn print_detached(
+fn detached_report(
     started: bool,
     pid: Option<u32>,
-    socket: &Path,
-    log: Option<&Path>,
-    load: &SupervisorLoad,
-) -> Result<()> {
-    let socket_arg = socket.as_os_str().to_string_lossy();
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&json!({
-            "ready": true,
-            "mode": "detached",
-            "started": started,
-            "pid": pid,
-            "socket": socket,
-            "log": log,
-            "load": load,
-            "next": {
-                "ask": ["spewer", "ask", "<question>", "--detach", "--socket", socket_arg],
-                "load": ["spewer", "load", "--socket", socket_arg],
-                "stop": ["spewer", "stop", "--socket", socket_arg]
-            }
-        }))?
-    );
-    Ok(())
+    socket: PathBuf,
+    log: Option<PathBuf>,
+    load: SupervisorLoad,
+) -> DetachedReport {
+    let socket_arg = socket.as_os_str().to_string_lossy().into_owned();
+    DetachedReport {
+        ready: true,
+        mode: "detached",
+        started,
+        pid,
+        socket,
+        log,
+        load,
+        next: json!({
+            "ask": ["spewer", "ask", "<question>", "--detach", "--socket", socket_arg],
+            "load": ["spewer", "load", "--socket", socket_arg],
+            "stop": ["spewer", "stop", "--socket", socket_arg]
+        }),
+    }
 }

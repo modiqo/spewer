@@ -37,7 +37,7 @@ An authenticated Codex installation reaches the hosted model. A future local eng
 
 A capsule is a worker description that Spewer can advertise and dispatch. A generic capsule accepts ordinary bounded work without claiming a specialized skill.
 
-A skill binding specializes that capsule. The binding names the skill, revision, digest, inputs, limits, and required engine capabilities.
+A skill binding specializes that capsule. CP15 records the skill name, description, revision, digest, and local source. A later dispatch checkpoint will add its input contract, limits, and required engine capabilities.
 
 The same worker can therefore advertise `generic` today and `specialized` after a skill binds. The worker does not become a new Spewer implementation.
 
@@ -47,9 +47,9 @@ The same worker can therefore advertise `generic` today and `specialized` after 
 |---|---|---|
 | Codex CLI discovery and `codex app-server --stdio` launch | **Implemented** | Spewer finds `codex` and starts App Server for leased work. |
 | Default model `gpt-5.6-luna` | **Implemented** | The task protocol uses this model when the caller does not choose one. |
-| One-command `spewer install` | **Planned** | Add host checks, Codex installation, authentication guidance, initialization, and service startup. |
-| Generic capsule record | **Planned** | Define the capsule manifest and install a default generic capsule. |
-| Skill binding | **Planned** | Add bind, unbind, validation, revision, and digest operations. |
+| One-command `spewer install` | **Implemented** | It finds or installs Codex, initializes defaults, verifies App Server, and starts or reuses the service. |
+| Generic capsule record | **Implemented** | Installation persists an owner-private `default` Luna capsule. |
+| Skill binding | **Implemented** | Bind and unbind validate `SKILL.md`, then atomically change the advertised state. |
 | Local open-weights installation | **Planned** | Let an engine package own runtime installation and model acquisition. |
 
 ## 2. The detached service keeps delegated work alive
@@ -83,7 +83,8 @@ No accepted task depends on a live shell, file descriptor, or model conversation
 | Detached `serve`, readiness check, private log, duplicate-start protection | **Implemented** | The service starts detached unless the caller requests foreground mode. |
 | FIFO scheduler, worker leases, and bounded capacity | **Implemented** | Spewer starts App Server when a leased turn is ready. |
 | Event log, projections, checkpoints, and result outbox | **Implemented** | The durable supervisor and reducer exist. |
-| Install-time service registration | **Planned** | `spewer install` should start the service and optionally register host startup. |
+| Install-time service start | **Implemented** | `spewer install` starts or reuses the detached service. |
+| Host login registration | **Planned** | Add only if real use shows that on-demand detached startup is insufficient. |
 | Long-lived warm engine pool | **Planned** | Keep worker runtimes warm only after measurements justify the extra lifecycle. |
 
 ## 3. One protocol makes engines and harnesses replaceable
@@ -108,7 +109,7 @@ This split avoids two bad extremes. A frozen adapter misses new bindings, while 
 
 ### Capsules advertise generic or specialized work
 
-The planned capability document lists each capsule as `generic` or `specialized`. A specialized entry includes its skill identity, revision, digest, and input contract.
+The capability document lists each capsule as `generic` or `specialized`. A specialized entry includes its skill identity, description, revision, and digest. The input contract joins it in CP16.
 
 The frontier harness uses these declarations as evidence for routing. Spewer validates the selected capsule again when it accepts the task.
 
@@ -118,9 +119,10 @@ The frontier harness uses these declarations as evidence for routing. Spewer val
 |---|---|---|
 | Versioned service operations over a private Unix socket | **Implemented** | Protocol 0.1 supports the durable task lifecycle. |
 | Engine and service capability response | **Implemented** | The service reports its protocol and Codex engine shape. |
-| Capsule fields in `TaskRequest` and capabilities | **Planned** | Add capsule ID, skill revision, digest, and match evidence. |
-| Dynamic capsule lookup and cache invalidation | **Planned** | Publish live bindings and a monotonic capability revision. |
-| Compatibility policy | **Partial** | Protocol versioning exists; capsule compatibility rules need an ADR. |
+| Capsule advertisements in capabilities | **Implemented** | Lookup returns generic or specialized workers and safe skill metadata. |
+| Capsule selection in `TaskRequest` | **Planned** | CP16 adds capsule ID, skill revision, digest, and match evidence. |
+| Dynamic capsule lookup and cache invalidation | **Implemented** | Every lookup reads current manifests and returns a deterministic content revision. |
+| Compatibility policy | **Partial** | ADR-0007 fixes discovery; CP16 must fix task-selection compatibility. |
 
 ## 4. A harness adapter preserves the frontier harness's control
 
@@ -283,7 +285,7 @@ The target experience starts with this command:
 spewer install
 ```
 
-The observable result is a ready local service, a working generic Luna capsule, and clear authentication status. The command also offers the appropriate frontier plugin.
+The observable result is a ready local service, a working generic Luna capsule, and clear authentication status. A later checkpoint adds the appropriate frontier plugin.
 
 The user then asks their frontier harness normally. The plugin discovers Spewer and delegates only when the request fits its policy.
 
@@ -311,17 +313,18 @@ Users should never diagnose event cursors, worker leases, or outbox rows to comp
 
 | Experience | Status | Checkpoint |
 |---|---|---|
-| Manual install, init, doctor, serve, and ask | **Implemented** | The pieces work, but setup still exposes them individually. |
+| Manual init, doctor, serve, and ask | **Implemented** | The individual lifecycle commands remain available for operators. |
 | Detached service behavior | **Implemented** | Repeated startup returns the existing ready service. |
-| One-command installation and default capsule | **Planned** | This is the next adoption-critical slice. |
+| One-command installation and default capsule | **Implemented** | One command prepares Codex, configuration, capsule, and detached service. |
 | Plugin-led discovery and natural delegation | **Planned** | Build the minimal skill, tools, and adapter packages. |
-| Capsule management UI | **Planned** | Start with clear CLI operations; add richer UI only after use proves the need. |
+| Capsule management CLI | **Implemented** | List, bind, and unbind cover the first explicit administration path. |
+| Capsule management UI | **Planned** | Add richer UI only after use proves the need. |
 
 ## The checkpoint keeps one simple promise
 
 Install Spewer once, then ask a frontier model for work as usual. Spewer should make cheaper repeatable execution available without moving judgment, safety, or recovery into prompts.
 
-The next build slice is therefore narrow: ship `spewer install`, a generic capsule manifest, live capsule lookup, and one frontier plugin. The existing supervisor remains intact beneath that path.
+The next build slice is CP16: bind accepted tasks and receipts to the selected capsule revision. The existing supervisor remains intact beneath that path.
 
 ## Sources
 

@@ -9,6 +9,27 @@ fn args(values: &[&str]) -> Vec<OsString> {
 #[test]
 fn parses_execution_commands() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(
+        parse(args(&[
+            "install",
+            "--max-workers",
+            "2",
+            "--skip-codex-install"
+        ]))?,
+        CliCommand::Install {
+            workspace: None,
+            max_workers: 2,
+            skip_codex_install: true,
+        }
+    );
+    assert_eq!(
+        parse(args(&["capsule", "bind", "default", "/tmp/skill"]))?,
+        CliCommand::CapsuleBind {
+            capsule_id: "default".to_owned(),
+            skill: PathBuf::from("/tmp/skill"),
+        }
+    );
+    assert_eq!(parse(args(&["capsule", "list"]))?, CliCommand::CapsuleList);
+    assert_eq!(
         parse(args(&["init", "--workspace", "/tmp/example"]))?,
         CliCommand::Init {
             workspace: Some(PathBuf::from("/tmp/example")),

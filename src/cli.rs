@@ -4,6 +4,7 @@ mod help;
 mod parse;
 mod question;
 mod service;
+mod setup;
 
 use crate::codex::{CodexConfig, doctor};
 use crate::error::Result;
@@ -17,6 +18,16 @@ use std::path::PathBuf;
 /// Parses process arguments, runs one command, and writes JSON to stdout.
 pub async fn run() -> Result<()> {
     match parse(std::env::args_os().skip(1))? {
+        CliCommand::Install {
+            workspace,
+            max_workers,
+            skip_codex_install,
+        } => setup::install(workspace, max_workers, skip_codex_install).await?,
+        CliCommand::CapsuleList => setup::capsule_list()?,
+        CliCommand::CapsuleBind { capsule_id, skill } => {
+            setup::capsule_bind(&capsule_id, &skill)?;
+        }
+        CliCommand::CapsuleUnbind(capsule_id) => setup::capsule_unbind(&capsule_id)?,
         CliCommand::Init {
             workspace,
             overwrite,

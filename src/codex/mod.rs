@@ -1,5 +1,6 @@
 //! Codex App Server integration.
 
+mod discovery;
 mod mapper;
 mod params;
 mod process;
