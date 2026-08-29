@@ -92,21 +92,36 @@ async fn outbox_retries_stable_message_until_acknowledged() -> Result<(), Box<dy
         .finalize(terminal, receipt, "poll".to_owned())
         .await?;
     let pending = database.pending("play".to_owned()).await?;
+    let unauthorized_pending = database.pending("another-harness".to_owned()).await?;
     let applied = database
         .acknowledge(first.message.message_id.clone(), "play".to_owned())
         .await?;
+    let unauthorized = database
+        .acknowledge(
+            first.message.message_id.clone(),
+            "another-harness".to_owned(),
+        )
+        .await;
     let repeated = database
         .acknowledge(first.message.message_id.clone(), "play".to_owned())
         .await?;
     let remaining = database.pending("play".to_owned()).await?;
+    let result_after_ack = database.result("delivery-task".to_owned()).await?;
+    let observed = database.observe("delivery-task".to_owned(), 1).await?;
     database.close().await?;
     assert!(first.append.inserted);
     assert!(!duplicate.append.inserted);
     assert_eq!(first.message, duplicate.message);
-    assert_eq!(pending, vec![first.message]);
+    assert_eq!(pending, vec![first.message.clone()]);
+    assert!(unauthorized_pending.is_empty());
     assert!(applied);
+    assert!(unauthorized.is_err());
     assert!(!repeated);
     assert!(remaining.is_empty());
+    assert_eq!(result_after_ack.message, Some(first.message));
+    assert_eq!(observed.next_cursor, 2);
+    assert_eq!(observed.events.len(), 1);
+    assert_eq!(observed.events.first().map(|event| event.seq), Some(2));
     remove_database_files(&path)?;
     Ok(())
 }

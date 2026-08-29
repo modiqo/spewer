@@ -1,9 +1,11 @@
 use crate::error::{Error, ErrorKind, Result};
+use crate::protocol::TaskRequest;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use time::Duration as TimeDuration;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
@@ -11,6 +13,16 @@ static ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) fn now() -> Result<String> {
     OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))
+}
+
+pub(crate) fn after_seconds(seconds: u64) -> Result<String> {
+    let seconds = i64::try_from(seconds)
+        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
+    OffsetDateTime::now_utc()
+        .checked_add(TimeDuration::seconds(seconds))
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "lease deadline overflow"))?
         .format(&Rfc3339)
         .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))
 }
@@ -36,6 +48,17 @@ pub(crate) fn sha256(bytes: &[u8]) -> Result<String> {
             .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
     }
     Ok(encoded)
+}
+
+/// Hashes the semantic task request independently from its generated task ID.
+///
+/// The idempotency key identifies the submission operation. This hash binds
+/// that operation to every field that can change worker behavior, while
+/// allowing a retry to omit or regenerate `task_id`.
+pub(crate) fn request_hash(request: &TaskRequest) -> Result<String> {
+    let mut canonical = request.clone();
+    canonical.task_id = None;
+    sha256(&serde_json::to_vec(&canonical)?)
 }
 
 pub(crate) fn required_pointer(value: &Value, pointer: &str) -> Result<String> {

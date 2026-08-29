@@ -34,6 +34,16 @@ async fn acceptance_append_dedup_and_replay_are_atomic() -> Result<(), Box<dyn s
             "2026-08-28T00:00:01Z".to_owned(),
         )
         .await?;
+    let mut changed_request: TaskRequest =
+        serde_json::from_str(include_str!("fixtures/task-request.json"))?;
+    changed_request.objective = "a different operation".to_owned();
+    let conflict = database
+        .accept(
+            changed_request,
+            "task-three".to_owned(),
+            "2026-08-28T00:00:01Z".to_owned(),
+        )
+        .await;
     let input = EventInput {
         task_id: "task-one".to_owned(),
         attempt: 1,
@@ -62,6 +72,7 @@ async fn acceptance_append_dedup_and_replay_are_atomic() -> Result<(), Box<dyn s
 
     assert!(accepted.created);
     assert!(!duplicate_accept.created);
+    assert!(conflict.is_err());
     assert_eq!(duplicate_accept.handle.task_id, "task-one");
     assert!(appended.inserted);
     assert!(!duplicate.inserted);

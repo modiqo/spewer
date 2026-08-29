@@ -1,7 +1,7 @@
 //! Entry and failure paths for tasks accepted by the supervisor.
 
 use super::{RunResult, run_codex_inner};
-use crate::codex::CodexConfig;
+use crate::codex::{CodexClient, CodexConfig};
 use crate::error::{Error, ErrorKind, Result};
 use crate::journal::TaskJournal;
 use crate::protocol::{Event, PROTOCOL_VERSION, TaskHandle, TaskRequest};
@@ -14,10 +14,53 @@ use serde_json::json;
 pub async fn run_codex_accepted(
     request: TaskRequest,
     task_id: String,
+    lease_id: String,
     config: CodexConfig,
     database: &Database,
 ) -> Result<RunResult> {
-    run_codex_inner(request, config, Some(database), Some(task_id)).await
+    run_codex_inner(
+        request,
+        config,
+        Some(database),
+        Some(task_id),
+        Some(lease_id),
+    )
+    .await
+}
+
+pub(super) async fn connect_engine(
+    config: CodexConfig,
+    database: Option<&Database>,
+    task_id: &str,
+    lease_id: Option<&str>,
+) -> Result<CodexClient> {
+    let Some(lease_id) = lease_id else {
+        return CodexClient::connect(config).await;
+    };
+    let database = database.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            "leased engine startup requires durable storage",
+        )
+    })?;
+    let mut client = CodexClient::spawn_uninitialized(&config)?;
+    let process_group = client.process_group().ok_or_else(|| {
+        Error::new(
+            ErrorKind::Io,
+            "App Server did not expose a process group identity",
+        )
+    })?;
+    database
+        .register_process(
+            task_id.to_owned(),
+            lease_id.to_owned(),
+            process_group,
+            config.program.to_string_lossy().into_owned(),
+            now()?,
+        )
+        .await?;
+    client.initialize(config.startup_timeout).await?;
+    Ok(client)
 }
 
 pub(super) async fn load_accepted_task<'a>(
@@ -32,10 +75,10 @@ pub(super) async fn load_accepted_task<'a>(
         )
     })?;
     let stored = database.request(task_id.clone()).await?;
-    if stored.idempotency_key != request.idempotency_key {
+    if crate::util::request_hash(&stored)? != crate::util::request_hash(request)? {
         return Err(Error::new(
             ErrorKind::InvalidInput,
-            "accepted task request does not match durable state",
+            "accepted task request hash does not match durable state",
         ));
     }
     let projection = database

@@ -85,3 +85,36 @@ pub(crate) fn build_failure_receipt(
         completed_at: now()?,
     })
 }
+
+pub(crate) fn build_cancelled_receipt(
+    projection: &Projection,
+    request: &TaskRequest,
+) -> Result<Receipt> {
+    let mut receipt = build_failure_receipt(projection, request)?;
+    receipt.status = ReceiptStatus::Cancelled;
+    receipt.summary = if projection.summary.is_empty() {
+        "Task cancelled by the parent harness.".to_owned()
+    } else {
+        projection.summary.clone()
+    };
+    receipt.verification_waiver =
+        Some("Cancellation ended the worker before acceptance verification completed.".to_owned());
+    Ok(receipt)
+}
+
+pub(crate) fn build_escalated_receipt(
+    projection: &Projection,
+    request: &TaskRequest,
+) -> Result<Receipt> {
+    let mut receipt = build_failure_receipt(projection, request)?;
+    receipt.status = ReceiptStatus::Escalated;
+    receipt.summary = if projection.summary.is_empty() {
+        "Execution outcome is uncertain after service recovery.".to_owned()
+    } else {
+        projection.summary.clone()
+    };
+    receipt.verification_waiver = Some(
+        "Spewer did not retry work whose prior side effects could not be proven absent.".to_owned(),
+    );
+    Ok(receipt)
+}

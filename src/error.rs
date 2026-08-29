@@ -1,9 +1,11 @@
 //! Explicit Spewer error values.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// The error categories exposed by Spewer.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ErrorKind {
     /// Input failed public validation.
     InvalidInput,
@@ -42,6 +44,11 @@ impl Error {
     /// Returns the stable failure category.
     pub const fn kind(&self) -> ErrorKind {
         self.kind
+    }
+
+    /// Returns the readable context without repeating the category.
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 

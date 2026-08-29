@@ -13,7 +13,7 @@ fn executable_help_teaches_the_global_and_command_routes() -> Result<(), Box<dyn
     assert!(global.contains("AGENT ROUTES\n"));
     assert!(global.contains("COMMON FORMS\n"));
     assert!(global.contains("doctor -> serve"));
-    assert!(global.contains("submit -> status or tail -> outbox -> ack"));
+    assert!(global.contains("capabilities -> submit -> observe -> result -> ack"));
     for flag in ["--overwrite", "--text", "--detach", "--foreground"] {
         assert!(global.contains(flag), "missing {flag} from global help");
     }
@@ -23,7 +23,18 @@ fn executable_help_teaches_the_global_and_command_routes() -> Result<(), Box<dyn
     let command = String::from_utf8(command.stdout)?;
     assert!(command.contains("new request -> queued -> starting -> running -> terminal receipt"));
     assert!(command.contains("After interruption, use 'spewer recover'"));
-    for command in ["init", "ask", "serve", "submit", "load", "stop"] {
+    for command in [
+        "init",
+        "ask",
+        "serve",
+        "submit",
+        "load",
+        "stop",
+        "capabilities",
+        "observe",
+        "result",
+        "cancel",
+    ] {
         let output = Command::new(binary).args([command, "--help"]).output()?;
         assert!(output.status.success());
         let help = String::from_utf8(output.stdout)?;

@@ -80,6 +80,7 @@ pub(super) fn migrate(connection: &Connection) -> Result<()> {
         ",
     )?;
     migrate_recovery(connection)?;
+    migrate_dispatch(connection)?;
     Ok(())
 }
 
@@ -143,4 +144,61 @@ fn migrate_recovery(connection: &Connection) -> Result<()> {
         ",
     )?;
     Ok(())
+}
+
+fn migrate_dispatch(connection: &Connection) -> Result<()> {
+    if !has_column(connection, "tasks", "request_hash")? {
+        connection.execute_batch(
+            "ALTER TABLE tasks ADD COLUMN request_hash TEXT NOT NULL DEFAULT ''; ",
+        )?;
+    }
+    connection.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS dispatches (
+            task_id TEXT PRIMARY KEY,
+            state TEXT NOT NULL,
+            lease_id TEXT,
+            server_epoch TEXT,
+            worker_id TEXT,
+            acquired_at TEXT,
+            expires_at TEXT,
+            process_group INTEGER,
+            process_signature TEXT,
+            process_started_at TEXT,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+        );
+
+        INSERT OR IGNORE INTO dispatches(task_id, state, updated_at)
+            SELECT task_id,
+                   CASE
+                       WHEN status IN ('completed','failed','cancelled','escalated') THEN 'terminal'
+                       WHEN status = 'queued' AND event_seq = 1 THEN 'queued'
+                       ELSE 'uncertain'
+                   END,
+                   updated_at
+              FROM tasks;
+
+        CREATE INDEX IF NOT EXISTS dispatches_state
+            ON dispatches(state, updated_at);
+
+        INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+            VALUES (3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+        ",
+    )?;
+    if !has_column(connection, "dispatches", "process_signature")? {
+        connection.execute_batch("ALTER TABLE dispatches ADD COLUMN process_signature TEXT;")?;
+    }
+    Ok(())
+}
+
+fn has_column(connection: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = statement.query_map([], |row| row.get::<_, String>(1))?;
+    for name in names {
+        if name? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }

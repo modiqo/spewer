@@ -79,6 +79,86 @@ pub(super) fn parse_socket_command(
     Ok(make(socket))
 }
 
+pub(super) fn parse_task_socket(
+    parser: &mut lexopt::Parser,
+    command: &str,
+    topic: HelpTopic,
+    make: fn(String, Option<PathBuf>) -> CliCommand,
+) -> Result<CliCommand> {
+    let mut task_id = None;
+    let mut socket = None;
+    while let Some(argument) = next(parser)? {
+        match argument {
+            Long("help") | Short('h') => return Ok(CliCommand::Help(Some(topic))),
+            Value(value) if task_id.is_none() => {
+                task_id = Some(value.to_string_lossy().into_owned());
+            }
+            Long("socket") => socket = Some(PathBuf::from(value(parser)?)),
+            other => return unexpected(command, &other),
+        }
+    }
+    let task_id = task_id.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            format!("{command} requires a task id"),
+        )
+    })?;
+    Ok(make(task_id, socket))
+}
+
+pub(super) fn parse_observe(parser: &mut lexopt::Parser) -> Result<CliCommand> {
+    let mut task_id = None;
+    let mut after = 0_u64;
+    let mut socket = None;
+    while let Some(argument) = next(parser)? {
+        match argument {
+            Long("help") | Short('h') => return Ok(CliCommand::Help(Some(HelpTopic::Observe))),
+            Value(value) if task_id.is_none() => {
+                task_id = Some(value.to_string_lossy().into_owned());
+            }
+            Long("after") => {
+                after = value(parser)?
+                    .to_string_lossy()
+                    .parse::<u64>()
+                    .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
+            }
+            Long("socket") => socket = Some(PathBuf::from(value(parser)?)),
+            other => return unexpected("observe", &other),
+        }
+    }
+    let task_id =
+        task_id.ok_or_else(|| Error::new(ErrorKind::InvalidInput, "observe requires a task id"))?;
+    Ok(CliCommand::Observe {
+        task_id,
+        after,
+        socket,
+    })
+}
+
+pub(super) fn parse_cancel(parser: &mut lexopt::Parser) -> Result<CliCommand> {
+    let mut task_id = None;
+    let mut reason = "cancelled by parent harness".to_owned();
+    let mut socket = None;
+    while let Some(argument) = next(parser)? {
+        match argument {
+            Long("help") | Short('h') => return Ok(CliCommand::Help(Some(HelpTopic::Cancel))),
+            Value(value) if task_id.is_none() => {
+                task_id = Some(value.to_string_lossy().into_owned());
+            }
+            Long("reason") => reason = value(parser)?.to_string_lossy().into_owned(),
+            Long("socket") => socket = Some(PathBuf::from(value(parser)?)),
+            other => return unexpected("cancel", &other),
+        }
+    }
+    let task_id =
+        task_id.ok_or_else(|| Error::new(ErrorKind::InvalidInput, "cancel requires a task id"))?;
+    Ok(CliCommand::Cancel {
+        task_id,
+        reason,
+        socket,
+    })
+}
+
 fn parse_workers(value: &std::ffi::OsStr) -> Result<usize> {
     value
         .to_string_lossy()

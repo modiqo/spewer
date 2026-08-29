@@ -5,6 +5,7 @@
 use spewer::delivery::OutboxMessage;
 use spewer::protocol::{DEFAULT_MODEL, TaskHandle, TaskStatus};
 use spewer::reducer::Projection;
+use spewer::store::Observation;
 use spewer::supervisor::SupervisorLoad;
 use std::fs::Permissions;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -106,9 +107,16 @@ fn local_service_completes_a_default_luna_turn() -> Result<(), Box<dyn std::erro
 
     let mut service = start_service(&home, &fake)?;
     wait_ready(&mut service)?;
+    assert_capabilities(&home, &fake)?;
     let submitted = run_cli(&home, &fake, &["submit", path(&task)?])?;
     ensure_success(&submitted, "submit")?;
-    let handle: TaskHandle = serde_json::from_slice(&submitted.stdout)?;
+    let handle: TaskHandle = serde_json::from_slice(&submitted.stdout).map_err(|error| {
+        format!(
+            "submit output was not a handle: {error}; stdout={}; stderr={}",
+            String::from_utf8_lossy(&submitted.stdout),
+            String::from_utf8_lossy(&submitted.stderr)
+        )
+    })?;
     let load = run_cli(&home, &fake, &["load"])?;
     ensure_success(&load, "load")?;
     let load: SupervisorLoad = serde_json::from_slice(&load.stdout)?;
@@ -116,6 +124,15 @@ fn local_service_completes_a_default_luna_turn() -> Result<(), Box<dyn std::erro
     assert_eq!(load.accepted_tasks, 1);
     let projection = wait_terminal(&home, &fake, &handle.task_id)?;
     assert_eq!(projection.status, TaskStatus::Completed);
+    let observed = run_cli(&home, &fake, &["observe", &handle.task_id, "--after", "1"])?;
+    ensure_success(&observed, "observe")?;
+    let observed: Observation = serde_json::from_slice(&observed.stdout)?;
+    assert_eq!(observed.next_cursor, projection.event_seq);
+    assert!(observed.events.iter().all(|event| event.seq > 1));
+    let result = run_cli(&home, &fake, &["result", &handle.task_id])?;
+    ensure_success(&result, "result")?;
+    let result: serde_json::Value = serde_json::from_slice(&result.stdout)?;
+    assert_eq!(result.get("ready"), Some(&serde_json::Value::Bool(true)));
 
     let outbox = run_cli(&home, &fake, &["outbox", "play"])?;
     ensure_success(&outbox, "outbox")?;
@@ -133,6 +150,10 @@ fn local_service_completes_a_default_luna_turn() -> Result<(), Box<dyn std::erro
     let empty = run_cli(&home, &fake, &["outbox", "play"])?;
     ensure_success(&empty, "outbox after ack")?;
     assert!(empty.stdout.is_empty());
+    let retained = run_cli(&home, &fake, &["result", &handle.task_id])?;
+    ensure_success(&retained, "result after ack")?;
+    let retained: serde_json::Value = serde_json::from_slice(&retained.stdout)?;
+    assert_eq!(retained.get("ready"), Some(&serde_json::Value::Bool(true)));
 
     let initialized = run_cli(&home, &fake, &["init", "--workspace", path(&repository)?])?;
     ensure_success(&initialized, "init for detached ask")?;
@@ -143,27 +164,29 @@ fn local_service_completes_a_default_luna_turn() -> Result<(), Box<dyn std::erro
         .pointer("/handle/task_id")
         .and_then(serde_json::Value::as_str)
         .ok_or("detached handle omitted task_id")?;
-    assert_eq!(
-        detached
-            .pointer("/next/status")
-            .and_then(serde_json::Value::as_str),
-        Some(format!("spewer status {detached_id}").as_str())
-    );
+    let expected = serde_json::json!(["spewer", "observe", detached_id, "--after", "0"]);
+    assert_eq!(detached.pointer("/next/observe"), Some(&expected));
     assert_eq!(
         wait_terminal(&home, &fake, detached_id)?.status,
         TaskStatus::Completed
     );
-    let detached_outbox = run_cli(&home, &fake, &["outbox", "spewer-ask"])?;
-    ensure_success(&detached_outbox, "detached outbox")?;
-    let detached_message = std::str::from_utf8(&detached_outbox.stdout)?
-        .lines()
-        .map(serde_json::from_str::<OutboxMessage>)
-        .collect::<std::result::Result<Vec<_>, _>>()?
-        .into_iter()
-        .find(|message| message.task_id == detached_id)
-        .ok_or("detached outbox did not contain its callback")?;
+    let detached_result = run_cli(&home, &fake, &["result", detached_id])?;
+    ensure_success(&detached_result, "detached result")?;
+    let detached_result: serde_json::Value = serde_json::from_slice(&detached_result.stdout)?;
+    let detached_message: OutboxMessage = serde_json::from_value(
+        detached_result
+            .pointer("/result/message")
+            .cloned()
+            .ok_or("detached result omitted its callback")?,
+    )?;
     assert_eq!(detached_message.mode, "poll");
     assert_eq!(detached_message.task_id, detached_id);
+    let detached_ack = run_cli(
+        &home,
+        &fake,
+        &["ack", &detached_message.message_id, "spewer-ask"],
+    )?;
+    ensure_success(&detached_ack, "detached ack")?;
 
     let stopped = run_cli(&home, &fake, &["stop"])?;
     ensure_success(&stopped, "stop")?;
@@ -248,12 +271,45 @@ fn start_service(home: &Path, fake: &Path) -> Result<Child, Box<dyn std::error::
         .spawn()?)
 }
 
+fn assert_capabilities(home: &Path, fake: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let output = run_cli(home, fake, &["capabilities"])?;
+    ensure_success(&output, "capabilities")?;
+    let capabilities: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(
+        capabilities.get("operations"),
+        Some(&serde_json::json!([
+            "capabilities",
+            "submit",
+            "observe",
+            "result",
+            "cancel",
+            "acknowledge",
+            "load",
+            "stop"
+        ]))
+    );
+    Ok(())
+}
+
 fn wait_ready(service: &mut Child) -> Result<(), Box<dyn std::error::Error>> {
     let stdout = service.stdout.take().ok_or("service stdout missing")?;
     let mut reader = BufReader::new(stdout);
     let mut line = String::new();
     reader.read_line(&mut line)?;
-    let ready: serde_json::Value = serde_json::from_str(&line)?;
+    let ready: serde_json::Value = match serde_json::from_str(&line) {
+        Ok(ready) => ready,
+        Err(error) => {
+            let mut stderr = String::new();
+            if let Some(mut stream) = service.stderr.take() {
+                stream.read_to_string(&mut stderr)?;
+            }
+            return Err(format!(
+                "service readiness was not JSON: {error}; line={line:?}; status={:?}; stderr={stderr}",
+                service.try_wait()
+            )
+            .into());
+        }
+    };
     if ready.get("ready").and_then(serde_json::Value::as_bool) != Some(true) {
         return Err(format!("service did not become ready: {line}").into());
     }

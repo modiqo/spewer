@@ -3,18 +3,19 @@
 #[cfg(test)]
 mod tests;
 
-use super::{ControlRequest, ControlResponse};
+use super::{
+    ControlRequest, ControlResponse, MAX_CONTROL_BYTES, ServiceCapabilities, service_capabilities,
+};
 use crate::codex::CodexConfig;
 use crate::error::{Error, ErrorKind, Result};
 use crate::protocol::{TaskHandle, TaskRequest};
 use crate::store::Database;
+use crate::store::{CancelOutcome, Observation, TaskResult};
 use crate::supervisor::{Supervisor, SupervisorConfig, SupervisorLoad};
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-
-const MAX_CONTROL_BYTES: u64 = 1_048_576;
 
 /// Foreground local service that owns the scheduler and its control socket.
 #[derive(Debug)]
@@ -33,7 +34,7 @@ impl LocalService {
         config: SupervisorConfig,
     ) -> Result<Self> {
         let listener = bind_socket(path.clone()).await?;
-        let supervisor = match Supervisor::start_codex(database, codex, config) {
+        let supervisor = match Supervisor::start_codex(database, codex, config).await {
             Ok(supervisor) => supervisor,
             Err(error) => {
                 remove_socket(path).await?;
@@ -100,7 +101,60 @@ pub async fn submit(path: PathBuf, request: TaskRequest) -> Result<TaskHandle> {
     .await?
     {
         ControlResponse::Handle { handle } => Ok(handle),
-        ControlResponse::Error { message } => Err(Error::new(ErrorKind::InvalidInput, message)),
+        ControlResponse::Error { kind, message } => Err(Error::new(kind, message)),
+        _ => Err(unexpected_response()),
+    }
+}
+
+/// Reads the operations and limits implemented by the running service.
+pub async fn capabilities(path: PathBuf) -> Result<ServiceCapabilities> {
+    match send(path, ControlRequest::Capabilities).await? {
+        ControlResponse::Capabilities { capabilities } => Ok(capabilities),
+        ControlResponse::Error { kind, message } => Err(Error::new(kind, message)),
+        _ => Err(unexpected_response()),
+    }
+}
+
+/// Reads current state and committed events after one cursor.
+pub async fn observe(path: PathBuf, task_id: String, after: u64) -> Result<Observation> {
+    match send(path, ControlRequest::Observe { task_id, after }).await? {
+        ControlResponse::Observation { observation } => Ok(observation),
+        ControlResponse::Error { kind, message } => Err(Error::new(kind, message)),
+        _ => Err(unexpected_response()),
+    }
+}
+
+/// Reads one task's current state and stable terminal message.
+pub async fn result(path: PathBuf, task_id: String) -> Result<TaskResult> {
+    match send(path, ControlRequest::Result { task_id }).await? {
+        ControlResponse::Result { result } => Ok(result),
+        ControlResponse::Error { kind, message } => Err(Error::new(kind, message)),
+        _ => Err(unexpected_response()),
+    }
+}
+
+/// Cancels one queued or active task through its scheduler owner.
+pub async fn cancel(path: PathBuf, task_id: String, reason: String) -> Result<CancelOutcome> {
+    match send(path, ControlRequest::Cancel { task_id, reason }).await? {
+        ControlResponse::Cancellation { cancellation } => Ok(cancellation),
+        ControlResponse::Error { kind, message } => Err(Error::new(kind, message)),
+        _ => Err(unexpected_response()),
+    }
+}
+
+/// Acknowledges a terminal message after one consumer stores it.
+pub async fn acknowledge(path: PathBuf, message_id: String, consumer_id: String) -> Result<bool> {
+    match send(
+        path,
+        ControlRequest::Acknowledge {
+            message_id,
+            consumer_id,
+        },
+    )
+    .await?
+    {
+        ControlResponse::Acknowledged { applied } => Ok(applied),
+        ControlResponse::Error { kind, message } => Err(Error::new(kind, message)),
         _ => Err(unexpected_response()),
     }
 }
@@ -109,7 +163,7 @@ pub async fn submit(path: PathBuf, request: TaskRequest) -> Result<TaskHandle> {
 pub async fn load(path: PathBuf) -> Result<SupervisorLoad> {
     match send(path, ControlRequest::Load).await? {
         ControlResponse::Load { load } => Ok(load),
-        ControlResponse::Error { message } => Err(Error::new(ErrorKind::InvalidInput, message)),
+        ControlResponse::Error { kind, message } => Err(Error::new(kind, message)),
         _ => Err(unexpected_response()),
     }
 }
@@ -118,7 +172,7 @@ pub async fn load(path: PathBuf) -> Result<SupervisorLoad> {
 pub async fn stop(path: PathBuf) -> Result<ControlResponse> {
     match send(path, ControlRequest::Stop).await? {
         response @ ControlResponse::Stopping => Ok(response),
-        ControlResponse::Error { message } => Err(Error::new(ErrorKind::InvalidInput, message)),
+        ControlResponse::Error { kind, message } => Err(Error::new(kind, message)),
         _ => Err(unexpected_response()),
     }
 }
@@ -134,6 +188,7 @@ async fn serve_one(
         if bytes == 0 || u64::try_from(bytes).map_or(true, |n| n > MAX_CONTROL_BYTES) {
             (
                 ControlResponse::Error {
+                    kind: ErrorKind::InvalidInput,
                     message: "control request is empty or exceeds 1 MiB".to_owned(),
                 },
                 false,
@@ -143,6 +198,7 @@ async fn serve_one(
                 Ok(request) => execute(request, handle).await,
                 Err(error) => (
                     ControlResponse::Error {
+                        kind: ErrorKind::Json,
                         message: format!("invalid control request: {error}"),
                     },
                     false,
@@ -158,25 +214,47 @@ async fn execute(
     handle: &crate::supervisor::SupervisorHandle,
 ) -> (ControlResponse, bool) {
     match request {
+        ControlRequest::Capabilities => (
+            ControlResponse::Capabilities {
+                capabilities: service_capabilities(),
+            },
+            false,
+        ),
         ControlRequest::Submit { request } => match handle.submit(*request).await {
             Ok(task) => (ControlResponse::Handle { handle: task }, false),
-            Err(error) => (
-                ControlResponse::Error {
-                    message: error.to_string(),
-                },
-                false,
-            ),
+            Err(error) => (error_response(&error), false),
+        },
+        ControlRequest::Observe { task_id, after } => match handle.observe(task_id, after).await {
+            Ok(observation) => (ControlResponse::Observation { observation }, false),
+            Err(error) => (error_response(&error), false),
+        },
+        ControlRequest::Result { task_id } => match handle.result(task_id).await {
+            Ok(result) => (ControlResponse::Result { result }, false),
+            Err(error) => (error_response(&error), false),
+        },
+        ControlRequest::Cancel { task_id, reason } => match handle.cancel(task_id, reason).await {
+            Ok(cancellation) => (ControlResponse::Cancellation { cancellation }, false),
+            Err(error) => (error_response(&error), false),
+        },
+        ControlRequest::Acknowledge {
+            message_id,
+            consumer_id,
+        } => match handle.acknowledge(message_id, consumer_id).await {
+            Ok(applied) => (ControlResponse::Acknowledged { applied }, false),
+            Err(error) => (error_response(&error), false),
         },
         ControlRequest::Load => match handle.load().await {
             Ok(load) => (ControlResponse::Load { load }, false),
-            Err(error) => (
-                ControlResponse::Error {
-                    message: error.to_string(),
-                },
-                false,
-            ),
+            Err(error) => (error_response(&error), false),
         },
         ControlRequest::Stop => (ControlResponse::Stopping, true),
+    }
+}
+
+fn error_response(error: &Error) -> ControlResponse {
+    ControlResponse::Error {
+        kind: error.kind(),
+        message: error.message().to_owned(),
     }
 }
 

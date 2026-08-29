@@ -1,10 +1,10 @@
 # Spewer implementation rules
 
-Read [the design index](../spewer-docs/README.md) before changing production code. Work only inside the active checkpoint from [the implementation plan](../spewer-docs/08-IMPLEMENTATION-CHECKPOINTS.md).
+Read [the design index](docs/readme.md) before changing production code. Work only inside the active checkpoint from [the implementation plan](docs/08-implementation-checkpoints.md).
 
 ## Preserve the architecture boundaries
 
-- Keep Codex protocol types inside `src/engines/codex`.
+- Keep Codex protocol types inside `src/codex`.
 - Keep public tasks, events, checkpoints, and receipts engine-neutral.
 - Append an event before exposing its state change.
 - Treat file state, Codex thread state, and Spewer state as separate records.

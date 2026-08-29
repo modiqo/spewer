@@ -111,19 +111,36 @@ pub struct CodexClient {
     commands: mpsc::Sender<DriverCommand>,
     events: mpsc::Receiver<CodexMessage>,
     driver: Option<JoinHandle<Result<()>>>,
+    process_group: Option<u32>,
     next_request_id: u64,
     request_timeout: Duration,
     shutdown_timeout: Duration,
     initialization: Value,
 }
 
+impl Drop for CodexClient {
+    fn drop(&mut self) {
+        if let Some(driver) = self.driver.take() {
+            terminate_abandoned_process_group(self.process_group.take());
+            driver.abort();
+        }
+    }
+}
+
 impl CodexClient {
     /// Starts App Server and completes the required initialize handshake.
     pub async fn connect(config: CodexConfig) -> Result<Self> {
-        let startup_timeout = config.startup_timeout;
+        let mut client = Self::spawn_uninitialized(&config)?;
+        client.initialize(config.startup_timeout).await?;
+        Ok(client)
+    }
+
+    /// Starts App Server without sending data, allowing durable process registration first.
+    pub(crate) fn spawn_uninitialized(config: &CodexConfig) -> Result<Self> {
         let request_timeout = config.request_timeout;
         let shutdown_timeout = config.shutdown_timeout;
-        let (child, stdin, stdout, stderr) = spawn_child(&config)?;
+        let (child, stdin, stdout, stderr) = spawn_child(config)?;
+        let process_group = child.id();
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CAPACITY);
         let (event_tx, event_rx) = mpsc::channel(EVENT_CAPACITY);
         let driver = tokio::spawn(run_driver(
@@ -135,18 +152,28 @@ impl CodexClient {
             event_tx,
             shutdown_timeout,
         ));
-        let mut client = Self {
+        Ok(Self {
             commands: command_tx,
             events: event_rx,
             driver: Some(driver),
+            process_group,
             next_request_id: 1,
             request_timeout,
             shutdown_timeout,
             initialization: Value::Null,
-        };
+        })
+    }
+
+    /// Returns the process group that must be bound to the active task lease.
+    pub(crate) const fn process_group(&self) -> Option<u32> {
+        self.process_group
+    }
+
+    /// Completes the App Server handshake after process custody is durable.
+    pub(crate) async fn initialize(&mut self, startup_timeout: Duration) -> Result<()> {
         let initialize = tokio::time::timeout(
             startup_timeout,
-            client.request(
+            self.request(
                 "initialize",
                 json!({
                     "clientInfo": {
@@ -159,12 +186,11 @@ impl CodexClient {
         )
         .await
         .map_err(|_| Error::new(ErrorKind::Timeout, "App Server initialization timed out"))??;
-        client
-            .notify("initialized", json!({}))
+        self.notify("initialized", json!({}))
             .await
             .map_err(|error| Error::new(error.kind(), format!("initialized: {error}")))?;
-        client.initialization = initialize;
-        Ok(client)
+        self.initialization = initialize;
+        Ok(())
     }
 
     /// Returns the immutable initialization response.
@@ -246,6 +272,7 @@ impl CodexClient {
         if let Some(driver) = self.driver.take() {
             driver.await??;
         }
+        self.process_group = None;
         Ok(())
     }
 }
@@ -440,6 +467,19 @@ fn terminate_process_group(child: &Child) -> Result<()> {
     killpg(Pid::from_raw(pid), Signal::SIGTERM)
         .map_err(|error| Error::new(ErrorKind::Io, error.to_string()))
 }
+
+#[cfg(unix)]
+fn terminate_abandoned_process_group(id: Option<u32>) {
+    use nix::sys::signal::{Signal, killpg};
+    use nix::unistd::Pid;
+
+    if let Some(id) = id.and_then(|value| i32::try_from(value).ok()) {
+        let _ignored = killpg(Pid::from_raw(id), Signal::SIGTERM);
+    }
+}
+
+#[cfg(not(unix))]
+fn terminate_abandoned_process_group(_id: Option<u32>) {}
 
 #[cfg(not(unix))]
 fn terminate_process_group(child: &mut Child) -> Result<()> {

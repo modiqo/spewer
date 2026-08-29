@@ -208,8 +208,13 @@ pub fn apply(current: &Projection, event: &Event) -> Result<Projection> {
                 next.summary = reason;
             }
         }
-        "task.cancelled" => next.status = TaskStatus::Cancelled,
-        "task.escalated" | "budget.exceeded" => next.status = TaskStatus::Escalated,
+        "task.cancelled" => {
+            next.status = TaskStatus::Cancelled;
+            if let Some(reason) = string_field(&event.data, "reason") {
+                next.summary = reason;
+            }
+        }
+        "task.escalated" | "budget.exceeded" => apply_escalation(&mut next, &event.data),
         "task.accepted" | "turn.leased" | "item.progress" | "engine.unknown" | "engine.stderr"
         | "task.heartbeat" => {}
         other => {
@@ -223,6 +228,13 @@ pub fn apply(current: &Projection, event: &Event) -> Result<Projection> {
         next.phase = Phase::Delivering;
     }
     Ok(next)
+}
+
+fn apply_escalation(next: &mut Projection, data: &Value) {
+    next.status = TaskStatus::Escalated;
+    if let Some(reason) = string_field(data, "reason") {
+        next.summary = reason;
+    }
 }
 
 fn apply_workspace(next: &mut Projection, data: &Value) {

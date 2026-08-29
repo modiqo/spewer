@@ -1,6 +1,9 @@
 //! Agent-facing command and lifecycle reference.
 
+mod service;
+
 use super::parse::HelpTopic;
+use service::{CANCEL, CAPABILITIES, OBSERVE, RESULT, STATUS};
 
 /// Renders global help or one command reference.
 pub(super) fn render(topic: Option<HelpTopic>) -> String {
@@ -14,6 +17,10 @@ pub(super) fn render(topic: Option<HelpTopic>) -> String {
         Some(HelpTopic::Submit) => SUBMIT,
         Some(HelpTopic::Load) => LOAD,
         Some(HelpTopic::Stop) => STOP,
+        Some(HelpTopic::Capabilities) => CAPABILITIES,
+        Some(HelpTopic::Observe) => OBSERVE,
+        Some(HelpTopic::Result) => RESULT,
+        Some(HelpTopic::Cancel) => CANCEL,
         Some(HelpTopic::Status) => STATUS,
         Some(HelpTopic::Tail) => TAIL,
         Some(HelpTopic::Rebuild) => REBUILD,
@@ -38,11 +45,11 @@ TASK STATE
 
 AGENT ROUTES
   Attached question: init -> ask -> read structured result
-  Detached question: serve -> ask --detach -> tail or status -> outbox -> ack
+  Detached question: serve -> ask --detach -> observe -> result -> ack
   Start service:   doctor -> serve
-  Delegate:        submit -> status or tail -> outbox -> ack
+  Delegate:        capabilities -> submit -> observe -> result -> ack
   One attached:    doctor -> run -> consume receipt -> ack callback
-  Observe:         status -> tail --after <event-cursor> -> status
+  Observe service: observe --after <event-cursor> -> result
   After restart:   recover -> status or tail -> resume
   Poll delivery:   outbox -> persist receipt once -> ack
   Repair state:    rebuild -> status
@@ -63,6 +70,10 @@ COMMANDS
   submit   Commit a task and queue its turn without waiting for completion.
   load     Read scheduler capacity, active turns, and queued turns.
   stop     Stop acceptance and drain the local service.
+  capabilities  Read the service operations, limits, and engine kinds.
+  observe  Read one projection and replay events after a cursor.
+  result   Read one stable terminal message without consuming it.
+  cancel   Stop one queued or active task and commit its receipt.
   run      Execute one task from JSON and write JSONL progress.
   status   Read the latest durable task projection. Changes no state.
   tail     Read committed events after a cursor. Changes no state.
@@ -120,7 +131,7 @@ STATE
 
 NEXT
   Attached mode returns the complete result. Use '--text' for an answer-first view.
-  Detached mode returns commands for tail, status, and receipt delivery.
+  Detached mode returns argument arrays for observe, result, and cancel.
 
 OUTPUT
   Attached mode writes one JSON result to stdout and terminal progress to stderr.
@@ -220,7 +231,7 @@ STATE
   new request -> queued with durable task handle
 
 NEXT
-  Save task_id, then use 'spewer status <task-id>' or 'spewer tail <task-id>'.
+  Save task_id, then use 'spewer observe <task-id> --after 0'.
 
 OUTPUT
   One JSON task handle after the acceptance event commits.
@@ -269,30 +280,6 @@ OUTPUT
 
 EXAMPLE
   spewer stop
-";
-
-const STATUS: &str = r"spewer status - read the latest durable task projection
-
-USAGE
-  spewer status <task-id>
-
-WHEN
-  Use when a parent knows the task_id and needs the current state or event cursor.
-
-STATE
-  any task state -> same task state
-  This read changes no state.
-
-NEXT
-  For new events, use 'spewer tail <task-id> --after <event-cursor>'.
-  For a terminal task, consume its callback with 'spewer outbox <consumer-id>'.
-  After restart, inspect events before using 'spewer resume <task-id>'.
-
-OUTPUT
-  One JSON projection with status, phase, event_seq, usage, engine, and workspace evidence. Missing tasks return null.
-
-EXAMPLE
-  spewer status tsk_example
 ";
 
 const TAIL: &str = r"spewer tail - read committed events after a durable cursor
@@ -390,7 +377,7 @@ EXAMPLE
 const ACK: &str = r"spewer ack - acknowledge one durably processed callback
 
 USAGE
-  spewer ack <message-id> <consumer-id>
+  spewer ack <message-id> <consumer-id> [--socket <path>]
 
 WHEN
   Use only after the named consumer durably stores or applies the callback receipt.
@@ -441,8 +428,25 @@ mod tests {
     #[test]
     fn global_help_routes_every_command() {
         for command in [
-            "init", "ask", "doctor", "serve", "submit", "load", "stop", "run", "status", "tail",
-            "recover", "resume", "outbox", "ack", "rebuild",
+            "init",
+            "ask",
+            "doctor",
+            "serve",
+            "submit",
+            "load",
+            "stop",
+            "run",
+            "status",
+            "tail",
+            "capabilities",
+            "observe",
+            "result",
+            "cancel",
+            "recover",
+            "resume",
+            "outbox",
+            "ack",
+            "rebuild",
         ] {
             assert!(GLOBAL.contains(command));
         }

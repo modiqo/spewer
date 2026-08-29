@@ -4,13 +4,62 @@
 mod unix;
 
 #[cfg(unix)]
-pub use unix::{LocalService, load, stop, submit};
+pub use unix::{
+    LocalService, acknowledge, cancel, capabilities, load, observe, result, stop, submit,
+};
 
-use crate::error::Result;
+use crate::error::{ErrorKind, Result};
 use crate::protocol::{TaskHandle, TaskRequest};
+use crate::store::{CancelOutcome, Observation, TaskResult};
 use crate::supervisor::SupervisorLoad;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+/// Maximum encoded request accepted by the local control service.
+pub const MAX_CONTROL_BYTES: u64 = 1_048_576;
+
+/// Features implemented by this service version.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ServiceCapabilities {
+    /// Spewer task protocol version.
+    pub protocol_version: String,
+    /// Stable service operations accepted by the control socket.
+    pub operations: Vec<String>,
+    /// Supported parent delivery modes.
+    pub callback_modes: Vec<String>,
+    /// Engine kinds that the service can schedule.
+    pub engine_kinds: Vec<String>,
+    /// Maximum encoded control request size.
+    pub max_control_bytes: u64,
+    /// Whether task cancellation is implemented.
+    pub cancellation: bool,
+    /// Whether callers can replay events from a durable cursor.
+    pub cursor_replay: bool,
+}
+
+/// Returns compile-time capabilities for the current service protocol.
+pub fn service_capabilities() -> ServiceCapabilities {
+    ServiceCapabilities {
+        protocol_version: crate::protocol::PROTOCOL_VERSION.to_owned(),
+        operations: [
+            "capabilities",
+            "submit",
+            "observe",
+            "result",
+            "cancel",
+            "acknowledge",
+            "load",
+            "stop",
+        ]
+        .map(str::to_owned)
+        .into(),
+        callback_modes: ["stream", "wait", "poll"].map(str::to_owned).into(),
+        engine_kinds: ["codex-app-server"].map(str::to_owned).into(),
+        max_control_bytes: MAX_CONTROL_BYTES,
+        cancellation: true,
+        cursor_replay: true,
+    }
+}
 
 /// Returns the default local control socket path.
 pub fn default_socket_path() -> Result<PathBuf> {
@@ -20,7 +69,25 @@ pub fn default_socket_path() -> Result<PathBuf> {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum ControlRequest {
-    Submit { request: Box<TaskRequest> },
+    Capabilities,
+    Submit {
+        request: Box<TaskRequest>,
+    },
+    Observe {
+        task_id: String,
+        after: u64,
+    },
+    Result {
+        task_id: String,
+    },
+    Cancel {
+        task_id: String,
+        reason: String,
+    },
+    Acknowledge {
+        message_id: String,
+        consumer_id: String,
+    },
     Load,
     Stop,
 }
@@ -34,6 +101,31 @@ pub enum ControlResponse {
         /// Stable task handle committed before scheduling.
         handle: TaskHandle,
     },
+    /// Features implemented by the running service.
+    Capabilities {
+        /// Negotiation result.
+        capabilities: ServiceCapabilities,
+    },
+    /// Current task state plus replayed events.
+    Observation {
+        /// Consistent observation snapshot.
+        observation: Observation,
+    },
+    /// Current task state and optional terminal message.
+    Result {
+        /// Non-consuming result snapshot.
+        result: TaskResult,
+    },
+    /// Idempotent task cancellation result.
+    Cancellation {
+        /// Terminal projection and callback information.
+        cancellation: CancelOutcome,
+    },
+    /// One consumer acknowledgement result.
+    Acknowledged {
+        /// True only when this call inserted the acknowledgement.
+        applied: bool,
+    },
     /// Current scheduler capacity and queue depth.
     Load {
         /// Point-in-time load report.
@@ -43,14 +135,19 @@ pub enum ControlResponse {
     Stopping,
     /// The service rejected the request.
     Error {
-        /// Typed server error rendered for the local caller.
+        /// Stable error category.
+        kind: ErrorKind,
+        /// Readable error context.
         message: String,
     },
 }
 
 #[cfg(not(unix))]
 mod unsupported {
-    use super::{ControlResponse, PathBuf, Result, SupervisorLoad, TaskHandle, TaskRequest};
+    use super::{
+        CancelOutcome, ControlResponse, Observation, PathBuf, Result, ServiceCapabilities,
+        SupervisorLoad, TaskHandle, TaskRequest, TaskResult,
+    };
     use crate::codex::CodexConfig;
     use crate::error::{Error, ErrorKind};
     use crate::store::Database;
@@ -88,6 +185,39 @@ mod unsupported {
     }
 
     /// Returns an unsupported-platform error.
+    pub async fn capabilities(_path: PathBuf) -> Result<ServiceCapabilities> {
+        Err(unsupported())
+    }
+
+    /// Returns an unsupported-platform error.
+    pub async fn observe(_path: PathBuf, _task_id: String, _after: u64) -> Result<Observation> {
+        Err(unsupported())
+    }
+
+    /// Returns an unsupported-platform error.
+    pub async fn result(_path: PathBuf, _task_id: String) -> Result<TaskResult> {
+        Err(unsupported())
+    }
+
+    /// Returns an unsupported-platform error.
+    pub async fn cancel(
+        _path: PathBuf,
+        _task_id: String,
+        _reason: String,
+    ) -> Result<CancelOutcome> {
+        Err(unsupported())
+    }
+
+    /// Returns an unsupported-platform error.
+    pub async fn acknowledge(
+        _path: PathBuf,
+        _message_id: String,
+        _consumer_id: String,
+    ) -> Result<bool> {
+        Err(unsupported())
+    }
+
+    /// Returns an unsupported-platform error.
     pub async fn load(_path: PathBuf) -> Result<SupervisorLoad> {
         Err(unsupported())
     }
@@ -106,4 +236,6 @@ mod unsupported {
 }
 
 #[cfg(not(unix))]
-pub use unsupported::{LocalService, load, stop, submit};
+pub use unsupported::{
+    LocalService, acknowledge, cancel, capabilities, load, observe, result, stop, submit,
+};

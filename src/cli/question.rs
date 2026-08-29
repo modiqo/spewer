@@ -104,9 +104,9 @@ async fn submit_detached(request: TaskRequest, socket: Option<PathBuf>) -> Resul
         serde_json::to_string_pretty(&json!({
             "handle": handle,
             "next": {
-                "tail": format!("spewer tail {task_id} --after 0"),
-                "status": format!("spewer status {task_id}"),
-                "receipt": "spewer outbox spewer-ask"
+                "observe": ["spewer", "observe", task_id, "--after", "0"],
+                "result": ["spewer", "result", task_id],
+                "cancel": ["spewer", "cancel", task_id]
             }
         }))?
     );

@@ -127,9 +127,19 @@ impl TaskRequest {
         }
         nonempty("engine.model", &self.engine.model)?;
         match self.callback.mode.as_str() {
-            "stream" | "wait" | "poll" => Ok(()),
-            _ => Err(ProtocolError::new("unsupported callback mode")),
+            "stream" | "wait" | "poll" => {}
+            _ => return Err(ProtocolError::new("unsupported callback mode")),
         }
+        let consumer_id = self
+            .callback
+            .consumer_id
+            .as_deref()
+            .ok_or_else(|| ProtocolError::new("callback.consumer_id is required"))?;
+        nonempty("callback.consumer_id", consumer_id)?;
+        if consumer_id.len() > 256 {
+            return Err(ProtocolError::new("callback.consumer_id exceeds 256 bytes"));
+        }
+        Ok(())
     }
 }
 

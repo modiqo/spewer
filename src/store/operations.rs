@@ -1,7 +1,8 @@
-use super::{AcceptedTask, AppendOutcome, EventInput};
+use super::{AcceptedTask, AppendOutcome, EventInput, Observation};
 use crate::error::{Error, ErrorKind, Result};
 use crate::protocol::{Event, PROTOCOL_VERSION, TaskHandle, TaskRequest, TaskStatus};
 use crate::reducer::{Projection, apply};
+use crate::util::request_hash;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 pub(super) fn accept(
@@ -11,15 +12,39 @@ pub(super) fn accept(
     created_at: &str,
 ) -> Result<AcceptedTask> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let submitted_hash = request_hash(request)?;
     let existing = transaction
         .query_row(
-            "SELECT projection_json FROM tasks WHERE idempotency_key = ?1",
+            "SELECT projection_json, request_json, request_hash FROM tasks WHERE idempotency_key = ?1",
             params![request.idempotency_key],
-            |row| row.get::<_, String>(0),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
         )
         .optional()?;
-    if let Some(json) = existing {
-        let projection: Projection = serde_json::from_str(&json)?;
+    if let Some((projection_json, request_json, stored_hash)) = existing {
+        let effective_hash = if stored_hash.is_empty() {
+            let stored: TaskRequest = serde_json::from_str(&request_json)?;
+            let hash = request_hash(&stored)?;
+            transaction.execute(
+                "UPDATE tasks SET request_hash = ?2 WHERE idempotency_key = ?1",
+                params![request.idempotency_key, hash],
+            )?;
+            hash
+        } else {
+            stored_hash
+        };
+        if effective_hash != submitted_hash {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "idempotency key is already bound to a different task request",
+            ));
+        }
+        let projection: Projection = serde_json::from_str(&projection_json)?;
         let handle = handle_from_projection(&projection);
         transaction.commit()?;
         return Ok(AcceptedTask {
@@ -42,8 +67,8 @@ pub(super) fn accept(
     };
     let projection = apply(&initial, &event)?;
     transaction.execute(
-        "INSERT INTO tasks(task_id, idempotency_key, request_json, projection_json, status, event_seq, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
+        "INSERT INTO tasks(task_id, idempotency_key, request_json, projection_json, status, event_seq, created_at, updated_at, request_hash)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
         params![
             task_id,
             request.idempotency_key,
@@ -52,6 +77,7 @@ pub(super) fn accept(
             status_name(projection.status),
             to_i64(projection.event_seq)?,
             created_at,
+            submitted_hash,
         ],
     )?;
     transaction.execute(
@@ -59,6 +85,10 @@ pub(super) fn accept(
         params![projection.task_id, request.engine.kind],
     )?;
     insert_event(&transaction, &event, None)?;
+    transaction.execute(
+        "INSERT INTO dispatches(task_id, state, updated_at) VALUES (?1, 'queued', ?2)",
+        params![task_id, created_at],
+    )?;
     let handle = handle_from_projection(&projection);
     transaction.commit()?;
     Ok(AcceptedTask {
@@ -198,6 +228,26 @@ pub(super) fn events_after(
         events.push(serde_json::from_str(&row?)?);
     }
     Ok(events)
+}
+
+pub(super) fn observe(connection: &Connection, task_id: &str, after: u64) -> Result<Observation> {
+    let projection = get(connection, task_id)?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "task does not exist"))?;
+    let events = events_after(connection, task_id, after)?;
+    let next_cursor = projection.event_seq;
+    let poll_after_ms = if projection.status.is_terminal() {
+        0
+    } else if projection.status == TaskStatus::Queued {
+        250
+    } else {
+        500
+    };
+    Ok(Observation {
+        projection,
+        events,
+        next_cursor,
+        poll_after_ms,
+    })
 }
 
 pub(super) fn rebuild(connection: &mut Connection, task_id: &str) -> Result<Projection> {

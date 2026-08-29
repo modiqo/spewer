@@ -2,6 +2,8 @@
 
 mod question;
 mod service;
+#[cfg(test)]
+mod tests;
 
 use crate::error::{Error, ErrorKind, Result};
 use lexopt::prelude::*;
@@ -37,6 +39,23 @@ pub(super) enum CliCommand {
     Stop {
         socket: Option<PathBuf>,
     },
+    Capabilities {
+        socket: Option<PathBuf>,
+    },
+    Observe {
+        task_id: String,
+        after: u64,
+        socket: Option<PathBuf>,
+    },
+    Result {
+        task_id: String,
+        socket: Option<PathBuf>,
+    },
+    Cancel {
+        task_id: String,
+        reason: String,
+        socket: Option<PathBuf>,
+    },
     Status(String),
     Tail {
         task_id: String,
@@ -49,6 +68,7 @@ pub(super) enum CliCommand {
     Acknowledge {
         message_id: String,
         consumer_id: String,
+        socket: Option<PathBuf>,
     },
     Help(Option<HelpTopic>),
     Version,
@@ -64,6 +84,10 @@ pub(super) enum HelpTopic {
     Submit,
     Load,
     Stop,
+    Capabilities,
+    Observe,
+    Result,
+    Cancel,
     Status,
     Tail,
     Rebuild,
@@ -75,7 +99,7 @@ pub(super) enum HelpTopic {
 
 impl HelpTopic {
     #[cfg(test)]
-    pub(super) const ALL: [Self; 15] = [
+    pub(super) const ALL: [Self; 19] = [
         Self::Init,
         Self::Ask,
         Self::Doctor,
@@ -84,6 +108,10 @@ impl HelpTopic {
         Self::Submit,
         Self::Load,
         Self::Stop,
+        Self::Capabilities,
+        Self::Observe,
+        Self::Result,
+        Self::Cancel,
         Self::Status,
         Self::Tail,
         Self::Rebuild,
@@ -103,6 +131,10 @@ impl HelpTopic {
             Some("submit") => Ok(Self::Submit),
             Some("load") => Ok(Self::Load),
             Some("stop") => Ok(Self::Stop),
+            Some("capabilities") => Ok(Self::Capabilities),
+            Some("observe") => Ok(Self::Observe),
+            Some("result") => Ok(Self::Result),
+            Some("cancel") => Ok(Self::Cancel),
             Some("status") => Ok(Self::Status),
             Some("tail") => Ok(Self::Tail),
             Some("rebuild") => Ok(Self::Rebuild),
@@ -133,6 +165,10 @@ impl std::fmt::Display for HelpTopic {
             Self::Submit => "submit",
             Self::Load => "load",
             Self::Stop => "stop",
+            Self::Capabilities => "capabilities",
+            Self::Observe => "observe",
+            Self::Result => "result",
+            Self::Cancel => "cancel",
             Self::Status => "status",
             Self::Tail => "tail",
             Self::Rebuild => "rebuild",
@@ -167,6 +203,20 @@ pub(super) fn parse(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> 
                 CliCommand::Stop { socket }
             })
         }
+        Value(value) if value == "capabilities" => service::parse_socket_command(
+            &mut parser,
+            "capabilities",
+            HelpTopic::Capabilities,
+            |socket| CliCommand::Capabilities { socket },
+        ),
+        Value(value) if value == "observe" => service::parse_observe(&mut parser),
+        Value(value) if value == "result" => service::parse_task_socket(
+            &mut parser,
+            "result",
+            HelpTopic::Result,
+            |task_id, socket| CliCommand::Result { task_id, socket },
+        ),
+        Value(value) if value == "cancel" => service::parse_cancel(&mut parser),
         Value(value) if value == "help" => parse_help(&mut parser),
         Value(value) if value == "status" => {
             parse_task_command(&mut parser, "status", HelpTopic::Status, CliCommand::Status)
@@ -300,15 +350,17 @@ fn parse_acknowledgement(parser: &mut lexopt::Parser) -> Result<CliCommand> {
         ));
     };
     let consumer_id = value(parser)?.to_string_lossy().into_owned();
-    if next(parser)?.is_some() {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "ack accepts two arguments",
-        ));
+    let mut socket = None;
+    while let Some(argument) = next(parser)? {
+        match argument {
+            Long("socket") => socket = Some(PathBuf::from(value(parser)?)),
+            other => return unexpected("ack", &other),
+        }
     }
     Ok(CliCommand::Acknowledge {
         message_id: message_id.to_string_lossy().into_owned(),
         consumer_id,
+        socket,
     })
 }
 
@@ -393,105 +445,4 @@ fn unexpected<T>(command: &str, argument: &lexopt::Arg<'_>) -> Result<T> {
         ErrorKind::InvalidInput,
         format!("unexpected {command} argument {argument:?}"),
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{CliCommand, HelpTopic, parse};
-    use std::ffi::OsString;
-    use std::path::PathBuf;
-
-    fn args(values: &[&str]) -> Vec<OsString> {
-        values.iter().map(OsString::from).collect()
-    }
-
-    #[test]
-    fn parses_execution_commands() -> Result<(), Box<dyn std::error::Error>> {
-        assert_eq!(
-            parse(args(&["init", "--workspace", "/tmp/example"]))?,
-            CliCommand::Init {
-                workspace: Some(PathBuf::from("/tmp/example")),
-                overwrite: false,
-            }
-        );
-        assert_eq!(
-            parse(args(&["init", "--overwrite"]))?,
-            CliCommand::Init {
-                workspace: None,
-                overwrite: true,
-            }
-        );
-        assert_eq!(
-            parse(args(&[
-                "ask",
-                "What is two plus two?",
-                "--detach",
-                "--socket",
-                "/tmp/spewer.sock",
-            ]))?,
-            CliCommand::Ask {
-                question: "What is two plus two?".to_owned(),
-                workspace: None,
-                text: false,
-                detach: true,
-                socket: Some(PathBuf::from("/tmp/spewer.sock")),
-            }
-        );
-        assert_eq!(
-            parse(args(&["doctor", "--engine", "codex"]))?,
-            CliCommand::DoctorCodex
-        );
-        assert_eq!(
-            parse(args(&["run", "task.json", "--engine", "codex"]))?,
-            CliCommand::RunCodex(PathBuf::from("task.json"))
-        );
-        assert_eq!(
-            parse(args(&["serve", "--engine", "codex"]))?,
-            CliCommand::Serve {
-                max_workers: 1,
-                socket: None,
-                detach: true,
-            }
-        );
-        assert_eq!(
-            parse(args(&["submit", "task.json"]))?,
-            CliCommand::Submit {
-                path: PathBuf::from("task.json"),
-                socket: None,
-            }
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn parses_durable_queries() -> Result<(), Box<dyn std::error::Error>> {
-        assert_eq!(
-            parse(args(&["status", "task-one"]))?,
-            CliCommand::Status("task-one".to_owned())
-        );
-        assert_eq!(
-            parse(args(&["tail", "task-one", "--after", "12"]))?,
-            CliCommand::Tail {
-                task_id: "task-one".to_owned(),
-                after: 12
-            }
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn supports_both_help_forms_for_every_command() -> Result<(), Box<dyn std::error::Error>> {
-        for topic in HelpTopic::ALL {
-            let name = topic.to_string();
-            assert_eq!(
-                parse(args(&["help", &name]))?,
-                CliCommand::Help(Some(topic))
-            );
-            assert_eq!(
-                parse(args(&[&name, "--help"]))?,
-                CliCommand::Help(Some(topic))
-            );
-        }
-        Ok(())
-    }
 }

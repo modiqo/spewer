@@ -1,4 +1,4 @@
-use super::{AppendOutcome, EventInput};
+use super::{AppendOutcome, CancelOutcome, EventInput, TaskResult};
 use crate::delivery::OutboxMessage;
 use crate::error::{Error, ErrorKind, Result};
 use crate::protocol::{Checkpoint, Receipt};
@@ -57,6 +57,7 @@ pub(super) fn commit_receipt(
 ) -> Result<OutboxMessage> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let message = insert_receipt_message(&transaction, receipt, mode)?;
+    super::dispatch::complete(&transaction, &receipt.task_id)?;
     transaction.commit()?;
     Ok(message)
 }
@@ -80,7 +81,7 @@ pub(super) fn finalize(
     Ok((append, message))
 }
 
-fn insert_receipt_message(
+pub(super) fn insert_receipt_message(
     transaction: &rusqlite::Transaction<'_>,
     receipt: &Receipt,
     mode: &str,
@@ -116,14 +117,92 @@ fn insert_receipt_message(
 
 pub(super) fn pending(connection: &Connection, consumer_id: &str) -> Result<Vec<OutboxMessage>> {
     let mut statement = connection.prepare(
-        "SELECT o.payload_json FROM outbox o LEFT JOIN deliveries d ON o.message_id = d.message_id AND d.consumer_id = ?1 WHERE d.message_id IS NULL ORDER BY o.created_at",
+        "SELECT o.payload_json, t.request_json
+           FROM outbox o
+           JOIN tasks t ON t.task_id = o.task_id
+           LEFT JOIN deliveries d
+             ON o.message_id = d.message_id AND d.consumer_id = ?1
+          WHERE d.message_id IS NULL
+          ORDER BY o.created_at",
     )?;
-    let rows = statement.query_map(params![consumer_id], |row| row.get::<_, String>(0))?;
+    let rows = statement.query_map(params![consumer_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
     let mut messages = Vec::new();
     for row in rows {
-        messages.push(serde_json::from_str(&row?)?);
+        let (message_json, request_json) = row?;
+        let request: crate::protocol::TaskRequest = serde_json::from_str(&request_json)?;
+        if request.callback.consumer_id.as_deref() == Some(consumer_id) {
+            messages.push(serde_json::from_str(&message_json)?);
+        }
     }
     Ok(messages)
+}
+
+pub(super) fn result(connection: &Connection, task_id: &str) -> Result<TaskResult> {
+    let projection = super::operations::get(connection, task_id)?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "task does not exist"))?;
+    let json = connection
+        .query_row(
+            "SELECT payload_json FROM outbox WHERE task_id = ?1",
+            params![task_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let message = json
+        .map(|value| serde_json::from_str(&value).map_err(Error::from))
+        .transpose()?;
+    Ok(TaskResult {
+        projection,
+        message,
+    })
+}
+
+pub(super) fn cancel(
+    connection: &mut Connection,
+    task_id: &str,
+    reason: &str,
+) -> Result<CancelOutcome> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let (projection_json, request_json): (String, String) = transaction
+        .query_row(
+            "SELECT projection_json, request_json FROM tasks WHERE task_id = ?1",
+            params![task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "task does not exist"))?;
+    let projection: Projection = serde_json::from_str(&projection_json)?;
+    if projection.status.is_terminal() {
+        transaction.commit()?;
+        return Ok(CancelOutcome {
+            projection,
+            message: None,
+            changed: false,
+        });
+    }
+    let request = serde_json::from_str::<crate::protocol::TaskRequest>(&request_json)?;
+    let appended = super::operations::append_in(
+        &transaction,
+        EventInput {
+            task_id: task_id.to_owned(),
+            attempt: projection.attempt,
+            kind: "task.cancelled".to_owned(),
+            data: serde_json::json!({"reason": reason}),
+            source: None,
+            source_key: None,
+            observed_at: now()?,
+        },
+    )?;
+    let receipt = crate::receipt::build_cancelled_receipt(&appended.projection, &request)?;
+    let message = insert_receipt_message(&transaction, &receipt, &request.callback.mode)?;
+    super::dispatch::complete(&transaction, task_id)?;
+    transaction.commit()?;
+    Ok(CancelOutcome {
+        projection: appended.projection,
+        message: Some(message),
+        changed: true,
+    })
 }
 
 pub(super) fn acknowledge(
@@ -131,9 +210,75 @@ pub(super) fn acknowledge(
     message_id: &str,
     consumer_id: &str,
 ) -> Result<bool> {
+    let request_json = connection
+        .query_row(
+            "SELECT t.request_json
+               FROM outbox o JOIN tasks t ON t.task_id = o.task_id
+              WHERE o.message_id = ?1",
+            params![message_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "outbox message does not exist"))?;
+    let request: crate::protocol::TaskRequest = serde_json::from_str(&request_json)?;
+    match request.callback.consumer_id.as_deref() {
+        Some(expected) if expected == consumer_id => {}
+        Some(_) => {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "consumer is not authorized to acknowledge this message",
+            ));
+        }
+        None => {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "task has no acknowledgement consumer",
+            ));
+        }
+    }
     let changed = connection.execute(
         "INSERT OR IGNORE INTO deliveries(message_id, consumer_id, acknowledged_at) VALUES (?1, ?2, ?3)",
         params![message_id, consumer_id, now()?],
     )?;
     Ok(changed == 1)
+}
+
+pub(super) fn reconcile_uncertain(
+    connection: &mut Connection,
+    task_id: &str,
+    reason: &str,
+) -> Result<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let (projection_json, request_json): (String, String) = transaction
+        .query_row(
+            "SELECT projection_json, request_json FROM tasks WHERE task_id = ?1",
+            params![task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "task does not exist"))?;
+    let current: Projection = serde_json::from_str(&projection_json)?;
+    if current.status.is_terminal() {
+        super::dispatch::complete(&transaction, task_id)?;
+        transaction.commit()?;
+        return Ok(());
+    }
+    let request: crate::protocol::TaskRequest = serde_json::from_str(&request_json)?;
+    let append = super::operations::append_in(
+        &transaction,
+        EventInput {
+            task_id: task_id.to_owned(),
+            attempt: current.attempt,
+            kind: "task.escalated".to_owned(),
+            data: serde_json::json!({"reason": reason}),
+            source: None,
+            source_key: None,
+            observed_at: now()?,
+        },
+    )?;
+    let receipt = crate::receipt::build_escalated_receipt(&append.projection, &request)?;
+    let _message = insert_receipt_message(&transaction, &receipt, &request.callback.mode)?;
+    super::dispatch::complete(&transaction, task_id)?;
+    transaction.commit()?;
+    Ok(())
 }

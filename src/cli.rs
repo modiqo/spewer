@@ -42,6 +42,18 @@ pub async fn run() -> Result<()> {
         CliCommand::Submit { path, socket } => submit(path, socket).await?,
         CliCommand::Load { socket } => load(socket).await?,
         CliCommand::Stop { socket } => stop(socket).await?,
+        CliCommand::Capabilities { socket } => capabilities(socket).await?,
+        CliCommand::Observe {
+            task_id,
+            after,
+            socket,
+        } => observe(task_id, after, socket).await?,
+        CliCommand::Result { task_id, socket } => result(task_id, socket).await?,
+        CliCommand::Cancel {
+            task_id,
+            reason,
+            socket,
+        } => cancel(task_id, reason, socket).await?,
         CliCommand::Status(task_id) => show_status(task_id).await?,
         CliCommand::Tail { task_id, after } => tail(task_id, after).await?,
         CliCommand::Rebuild(task_id) => rebuild(task_id).await?,
@@ -51,7 +63,8 @@ pub async fn run() -> Result<()> {
         CliCommand::Acknowledge {
             message_id,
             consumer_id,
-        } => acknowledge(message_id, consumer_id).await?,
+            socket,
+        } => acknowledge(message_id, consumer_id, socket).await?,
         CliCommand::Help(topic) => print_help(topic),
         CliCommand::Version => println!("spewer {}", env!("CARGO_PKG_VERSION")),
     }
@@ -101,6 +114,36 @@ async fn stop(socket: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+async fn capabilities(socket: Option<PathBuf>) -> Result<()> {
+    let capabilities = crate::control::capabilities(socket_path(socket)?).await?;
+    println!("{}", serde_json::to_string_pretty(&capabilities)?);
+    Ok(())
+}
+
+async fn observe(task_id: String, after: u64, socket: Option<PathBuf>) -> Result<()> {
+    let observation = crate::control::observe(socket_path(socket)?, task_id, after).await?;
+    println!("{}", serde_json::to_string_pretty(&observation)?);
+    Ok(())
+}
+
+async fn result(task_id: String, socket: Option<PathBuf>) -> Result<()> {
+    let result = crate::control::result(socket_path(socket)?, task_id).await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "ready": result.message.is_some(),
+            "result": result
+        }))?
+    );
+    Ok(())
+}
+
+async fn cancel(task_id: String, reason: String, socket: Option<PathBuf>) -> Result<()> {
+    let cancellation = crate::control::cancel(socket_path(socket)?, task_id, reason).await?;
+    println!("{}", serde_json::to_string_pretty(&cancellation)?);
+    Ok(())
+}
+
 async fn read_request(path: PathBuf) -> Result<TaskRequest> {
     let task_json = tokio::task::spawn_blocking(move || std::fs::read_to_string(path)).await??;
     Ok(serde_json::from_str(&task_json)?)
@@ -141,10 +184,13 @@ async fn outbox(consumer_id: String) -> Result<()> {
     Ok(())
 }
 
-async fn acknowledge(message_id: String, consumer_id: String) -> Result<()> {
-    let database = Database::open(Database::default_path()?).await?;
-    let applied = database.acknowledge(message_id, consumer_id).await?;
-    database.close().await?;
+async fn acknowledge(
+    message_id: String,
+    consumer_id: String,
+    socket: Option<PathBuf>,
+) -> Result<()> {
+    let applied =
+        crate::control::acknowledge(socket_path(socket)?, message_id, consumer_id).await?;
     println!("{}", serde_json::to_string(&json!({"applied": applied}))?);
     Ok(())
 }

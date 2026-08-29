@@ -45,7 +45,7 @@ pub(crate) struct DriveOutcome {
 
 /// Runs one task through Codex App Server and returns a typed receipt.
 pub async fn run_codex(request: TaskRequest, config: CodexConfig) -> Result<RunResult> {
-    run_codex_inner(request, config, None, None).await
+    run_codex_inner(request, config, None, None, None).await
 }
 
 /// Runs one task while committing every accepted event to `SQLite`.
@@ -54,7 +54,7 @@ pub async fn run_codex_durable(
     config: CodexConfig,
     database: &Database,
 ) -> Result<RunResult> {
-    run_codex_inner(request, config, Some(database), None).await
+    run_codex_inner(request, config, Some(database), None, None).await
 }
 
 pub(super) async fn run_codex_inner(
@@ -62,6 +62,7 @@ pub(super) async fn run_codex_inner(
     mut config: CodexConfig,
     database: Option<&Database>,
     accepted_task_id: Option<String>,
+    accepted_lease_id: Option<String>,
 ) -> Result<RunResult> {
     request.validate()?;
     if request.engine.kind != "codex-app-server" {
@@ -85,7 +86,8 @@ pub(super) async fn run_codex_inner(
     let deadline = started
         .checked_add(Duration::from_secs(request.budgets.wall_seconds))
         .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "wall deadline overflow"))?;
-    let mut client = CodexClient::connect(config).await?;
+    let mut client =
+        accepted::connect_engine(config, database, &task_id, accepted_lease_id.as_deref()).await?;
     let conversation = start_conversation(&mut client, &request, &workspace, &mut task).await;
     let (thread_id, turn_id) = match conversation {
         Ok(ids) => ids,
