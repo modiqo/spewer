@@ -21,6 +21,11 @@ pub(super) enum CliCommand {
         skip_codex_install: bool,
     },
     CapsuleList,
+    CapsuleAdd {
+        capsule_id: String,
+        engine: String,
+        model: String,
+    },
     CapsuleBind {
         capsule_id: String,
         skill: PathBuf,
@@ -33,12 +38,17 @@ pub(super) enum CliCommand {
     Ask {
         question: String,
         workspace: Option<PathBuf>,
+        capsule_id: Option<String>,
         text: bool,
         detach: bool,
         socket: Option<PathBuf>,
     },
     DoctorCodex,
+    DoctorOllama {
+        model: Option<String>,
+    },
     RunCodex(PathBuf),
+    RunOllama(PathBuf),
     Serve {
         max_workers: usize,
         socket: Option<PathBuf>,
@@ -191,13 +201,14 @@ fn parse_run(parser: &mut lexopt::Parser) -> Result<CliCommand> {
         .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "run requires a task JSON path"))?;
     match engine {
         Some(value) if value == "codex" => Ok(CliCommand::RunCodex(path)),
+        Some(value) if value == "ollama" => Ok(CliCommand::RunOllama(path)),
         Some(value) => Err(Error::new(
             ErrorKind::InvalidInput,
             format!("unsupported engine {}", value.to_string_lossy()),
         )),
         None => Err(Error::new(
             ErrorKind::InvalidInput,
-            "run requires --engine codex",
+            "run requires --engine codex or --engine ollama",
         )),
     }
 }
@@ -288,22 +299,29 @@ fn parse_acknowledgement(parser: &mut lexopt::Parser) -> Result<CliCommand> {
 
 fn parse_doctor(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     let mut engine = None;
+    let mut model = None;
     while let Some(argument) = next(parser)? {
         match argument {
             Long("help") | Short('h') => return Ok(CliCommand::Help(Some(HelpTopic::Doctor))),
             Long("engine") => engine = Some(value(parser)?),
+            Long("model") => model = Some(value(parser)?.to_string_lossy().into_owned()),
             other => return unexpected("doctor", &other),
         }
     }
     match engine {
-        Some(value) if value == "codex" => Ok(CliCommand::DoctorCodex),
+        Some(value) if value == "codex" && model.is_none() => Ok(CliCommand::DoctorCodex),
+        Some(value) if value == "codex" => Err(Error::new(
+            ErrorKind::InvalidInput,
+            "doctor --engine codex does not accept --model",
+        )),
+        Some(value) if value == "ollama" => Ok(CliCommand::DoctorOllama { model }),
         Some(value) => Err(Error::new(
             ErrorKind::InvalidInput,
             format!("unsupported engine {}", value.to_string_lossy()),
         )),
         None => Err(Error::new(
             ErrorKind::InvalidInput,
-            "doctor requires --engine codex",
+            "doctor requires --engine codex or --engine ollama",
         )),
     }
 }

@@ -17,7 +17,7 @@ $ spewer ask "What is 17 multiplied by 19?" --text
 323
 ```
 
-That is a working Spewer. The next steps progressively add background work, frontier delegation,
+That is a working Spewer. The next steps add background work, local Qwen3, frontier delegation,
 specialized skills, and concurrent workers.
 
 ## Start with one useful worker
@@ -83,7 +83,36 @@ Cancel work you no longer need:
 $ spewer cancel <task-id> --reason "the parent no longer needs it"
 ```
 
-### 4. Delegate from Codex without changing harnesses
+### 4. Add a local Qwen3 worker when you want one
+
+Ollama can serve the shipped Qwen3 reference model on your machine. Pull it explicitly because
+the model download is large:
+
+```console
+$ ollama pull qwen3:30b-a3b
+$ spewer doctor --engine ollama --model qwen3:30b-a3b
+```
+
+Register the installed model as another capsule:
+
+```console
+$ spewer capsule add qwen3-local --engine ollama --model qwen3:30b-a3b
+```
+
+The running service discovers the capsule without restarting. Ask through it directly:
+
+```console
+$ spewer ask "What is 17 multiplied by 19?" --capsule qwen3-local --text
+323
+```
+
+The CP18 Ollama worker performs read-only inference. It receives the objective, notes, projected
+files, acceptance criteria, and any bound skill. It rejects tasks that request commands or file
+writes.
+
+The `default` Luna capsule remains available for work that needs the Codex agent tool loop.
+
+### 5. Delegate from Codex without changing harnesses
 
 `spewer install` already installs the reference Codex skill. You do not need a separate
 `spewer connect` command.
@@ -106,9 +135,9 @@ $ spewer cancel <task-id> --reason "the task is no longer needed"
 Codex keeps the conversation and final judgment. Spewer runs Luna and returns the worker's
 receipt.
 
-### 5. Turn the generic worker into a specialist
+### 6. Turn a generic worker into a specialist
 
-Bind any valid `SKILL.md` or skill directory to the default capsule:
+Bind any valid `SKILL.md` or skill directory to a capsule:
 
 ```console
 $ spewer capsule bind default /absolute/path/to/review-skill
@@ -183,12 +212,13 @@ never converts missing price data into zero.
 | Configurable local worker concurrency | Implemented |
 | Reference Codex delegation skill | Implemented |
 | Complete durable Play adapter | Implemented |
-| Production open-weights engine | Planned for CP18 |
+| Local Qwen3 inference through Ollama | Implemented in CP18 |
+| Local-model command execution and file writes | Not implemented |
 | Native integrations for other frontier harnesses | Planned |
 | Distributed multi-machine workers | Not implemented |
 
 Inferred `spewer ask` tasks use read-only filesystem authority and deny network access by default.
-Codex App Server is the only production worker engine today.
+The service routes both Codex App Server and local Ollama capsules.
 
 ## Go deeper only when you need to
 
@@ -202,7 +232,7 @@ Codex App Server is the only production worker engine today.
 - [Play integration](docs/10-play-integration.md) defines the first complete durable parent
   adapter.
 - [Design index](docs/readme.md) links every accepted contract and decision.
-- [Checkpoint evidence](artifacts/checkpoints) records the proof through CP17.
+- [Checkpoint evidence](artifacts/checkpoints) records the proof through CP18.
 
 ## Build and verify Spewer
 

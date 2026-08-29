@@ -24,17 +24,19 @@ EXAMPLE
   spewer install --workspace /absolute/path/to/repository
 ";
 
-pub(super) const CAPSULE: &str = r"spewer capsule - discover or specialize a worker
+pub(super) const CAPSULE: &str = r"spewer capsule - add, discover, or specialize a worker
 
 USAGE
+  spewer capsule add <capsule-id> --engine ollama --model <name>
   spewer capsule list
   spewer capsule bind <capsule-id> <skill-or-directory>
   spewer capsule unbind <capsule-id>
 
 WHEN
-  List before routing. Bind when a valid SKILL.md should specialize an existing capsule.
+  Add an installed Ollama model once. List before routing. Bind a valid SKILL.md to specialize a capsule.
 
 STATE
+  add: installed Ollama model -> generic capsule
   bind: generic capsule -> specialized capsule
   unbind: specialized capsule -> generic capsule
   list: no state change
@@ -46,6 +48,7 @@ OUTPUT
   One JSON catalog or one changed manifest. Local skill source paths only appear in administration output.
 
 EXAMPLE
+  spewer capsule add qwen3-local --engine ollama --model qwen3:30b-a3b
   spewer capsule bind default ./skills/code-review
   spewer capsule list
 ";

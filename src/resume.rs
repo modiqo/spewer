@@ -87,11 +87,27 @@ pub(crate) async fn run(
                 &request,
                 driven.evidence,
                 terminal,
-                started,
+                crate::runner::EngineRunMeta {
+                    started,
+                    version: Some("codex-cli".to_owned()),
+                },
             )
             .await
         }
-        None => finish(task, handle, workspace, &request, driven.evidence, started).await,
+        None => {
+            finish(
+                task,
+                handle,
+                workspace,
+                &request,
+                driven.evidence,
+                crate::runner::EngineRunMeta {
+                    started,
+                    version: Some("codex-cli".to_owned()),
+                },
+            )
+            .await
+        }
     }
 }
 

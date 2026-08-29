@@ -30,7 +30,7 @@ pub(super) fn parse_serve(parser: &mut lexopt::Parser) -> Result<CliCommand> {
         ));
     }
     match engine {
-        Some(value) if value == "codex" => Ok(CliCommand::Serve {
+        Some(value) if value == "codex" || value == "all" => Ok(CliCommand::Serve {
             max_workers,
             socket,
             detach: !foreground,
@@ -41,7 +41,7 @@ pub(super) fn parse_serve(parser: &mut lexopt::Parser) -> Result<CliCommand> {
         )),
         None => Err(Error::new(
             ErrorKind::InvalidInput,
-            "serve requires --engine codex",
+            "serve requires --engine all (or legacy --engine codex)",
         )),
     }
 }

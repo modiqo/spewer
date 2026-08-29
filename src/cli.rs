@@ -25,6 +25,11 @@ pub async fn run() -> Result<()> {
             skip_codex_install,
         } => setup::install(workspace, max_workers, skip_codex_install).await?,
         CliCommand::CapsuleList => setup::capsule_list()?,
+        CliCommand::CapsuleAdd {
+            capsule_id,
+            engine,
+            model,
+        } => setup::capsule_add(&capsule_id, &engine, &model).await?,
         CliCommand::CapsuleBind { capsule_id, skill } => {
             setup::capsule_bind(&capsule_id, &skill)?;
         }
@@ -36,16 +41,29 @@ pub async fn run() -> Result<()> {
         CliCommand::Ask {
             question: prompt,
             workspace,
+            capsule_id,
             text,
             detach,
             socket,
-        } => Box::pin(question::ask(prompt, workspace, text, detach, socket)).await?,
+        } => {
+            Box::pin(question::ask(
+                prompt, workspace, capsule_id, text, detach, socket,
+            ))
+            .await?;
+        }
         CliCommand::DoctorCodex => {
             let report = doctor(CodexConfig::default()).await?;
             let json = serde_json::to_string_pretty(&report)?;
             println!("{json}");
         }
+        CliCommand::DoctorOllama { model } => {
+            let report =
+                crate::ollama::doctor(crate::ollama::OllamaConfig::default(), model.as_deref())
+                    .await?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
         CliCommand::RunCodex(path) => run_task(path).await?,
+        CliCommand::RunOllama(path) => run_ollama_task(path).await?,
         CliCommand::Serve {
             max_workers,
             socket,
@@ -97,6 +115,35 @@ async fn run_task(path: PathBuf) -> Result<()> {
     let request = read_request(path).await?;
     let database = Database::open(Database::default_path()?).await?;
     let outcome = run_codex_durable(request, CodexConfig::default(), &database).await;
+    let close = database.close().await;
+    let result = outcome?;
+    close?;
+    println!(
+        "{}",
+        serde_json::to_string(&json!({"handle": result.handle}))?
+    );
+    for event in result.events {
+        println!("{}", serde_json::to_string(&json!({"event": event}))?);
+    }
+    println!(
+        "{}",
+        serde_json::to_string(&json!({"receipt": result.receipt}))?
+    );
+    if let Some(callback) = result.callback {
+        println!("{}", serde_json::to_string(&json!({"callback": callback}))?);
+    }
+    Ok(())
+}
+
+async fn run_ollama_task(path: PathBuf) -> Result<()> {
+    let request = read_request(path).await?;
+    let database = Database::open(Database::default_path()?).await?;
+    let outcome = crate::runner::run_ollama_durable(
+        request,
+        crate::ollama::OllamaConfig::default(),
+        &database,
+    )
+    .await;
     let close = database.close().await;
     let result = outcome?;
     close?;

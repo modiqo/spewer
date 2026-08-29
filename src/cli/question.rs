@@ -45,12 +45,16 @@ pub(super) async fn initialize(workspace: Option<PathBuf>, overwrite: bool) -> R
 pub(super) async fn ask(
     question: String,
     workspace: Option<PathBuf>,
+    capsule_id: Option<String>,
     text_output: bool,
     detach: bool,
     socket: Option<PathBuf>,
 ) -> Result<()> {
     let config = tokio::task::spawn_blocking(crate::config::LocalConfig::load).await??;
     let mut request = config.infer_question(&question, workspace)?;
+    if let Some(capsule_id) = capsule_id {
+        select_capsule(&mut request, &capsule_id)?;
+    }
     if detach {
         "poll".clone_into(&mut request.callback.mode);
         return submit_detached(request, socket).await;
@@ -64,8 +68,25 @@ async fn run_attached(request: TaskRequest, text_output: bool) -> Result<()> {
         .clone()
         .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "ask task has no identifier"))?;
     let database = Database::open(Database::default_path()?).await?;
-    let run = run_codex_durable(request, CodexConfig::default(), &database);
-    let outcome = Box::pin(wait_with_progress(run, &database, &task_id)).await;
+    let engine = request.engine.kind.clone();
+    let outcome = match engine.as_str() {
+        "codex-app-server" => {
+            let run = run_codex_durable(request, CodexConfig::default(), &database);
+            Box::pin(wait_with_progress(run, &database, &task_id)).await
+        }
+        crate::ollama::ENGINE_KIND => {
+            let run = crate::runner::run_ollama_durable(
+                request,
+                crate::ollama::OllamaConfig::default(),
+                &database,
+            );
+            Box::pin(wait_with_progress(run, &database, &task_id)).await
+        }
+        other => Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!("ask cannot dispatch engine {other}"),
+        )),
+    };
     let result = match outcome {
         Ok(result) => result,
         Err(error) => {
@@ -83,6 +104,24 @@ async fn run_attached(request: TaskRequest, text_output: bool) -> Result<()> {
     let closed = database.close().await;
     delivered?;
     closed
+}
+
+fn select_capsule(request: &mut TaskRequest, capsule_id: &str) -> Result<()> {
+    let catalog = crate::capsule::catalog()?;
+    let capsule = catalog
+        .capsules
+        .iter()
+        .find(|capsule| capsule.id == capsule_id)
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("capsule {capsule_id} is not installed"),
+            )
+        })?;
+    request.engine = capsule.engine.clone();
+    request.capsule = Some(crate::capsule::select(capsule_id)?);
+    request.validate()?;
+    Ok(())
 }
 
 async fn submit_detached(request: TaskRequest, socket: Option<PathBuf>) -> Result<()> {

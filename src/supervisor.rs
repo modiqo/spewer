@@ -85,6 +85,16 @@ impl Supervisor {
         Self::start_with(database, Arc::new(CodexWorker { config: codex }), config).await
     }
 
+    /// Starts one supervisor that routes Codex and local Ollama tasks.
+    pub async fn start_engines(
+        database: Database,
+        codex: CodexConfig,
+        ollama: crate::ollama::OllamaConfig,
+        config: SupervisorConfig,
+    ) -> Result<Self> {
+        Self::start_with(database, Arc::new(EngineWorker { codex, ollama }), config).await
+    }
+
     async fn start_with(
         database: Database,
         worker: Arc<dyn TurnWorker>,
@@ -242,6 +252,12 @@ struct CodexWorker {
     config: CodexConfig,
 }
 
+#[derive(Clone, Debug)]
+struct EngineWorker {
+    codex: CodexConfig,
+    ollama: crate::ollama::OllamaConfig,
+}
+
 impl TurnWorker for CodexWorker {
     fn run(
         &self,
@@ -255,6 +271,42 @@ impl TurnWorker for CodexWorker {
             let _result =
                 crate::runner::run_codex_accepted(request, task_id, lease_id, config, &database)
                     .await?;
+            Ok(())
+        })
+    }
+}
+
+impl TurnWorker for EngineWorker {
+    fn run(
+        &self,
+        request: TaskRequest,
+        task_id: String,
+        lease_id: String,
+        database: Arc<Database>,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        let codex = self.codex.clone();
+        let ollama = self.ollama.clone();
+        Box::pin(async move {
+            match request.engine.kind.as_str() {
+                "codex-app-server" => {
+                    let _result = crate::runner::run_codex_accepted(
+                        request, task_id, lease_id, codex, &database,
+                    )
+                    .await?;
+                }
+                crate::ollama::ENGINE_KIND => {
+                    let _result = crate::runner::run_ollama_accepted(
+                        request, task_id, lease_id, ollama, &database,
+                    )
+                    .await?;
+                }
+                other => {
+                    return Err(Error::new(
+                        ErrorKind::InvalidInput,
+                        format!("service cannot dispatch engine {other}"),
+                    ));
+                }
+            }
             Ok(())
         })
     }

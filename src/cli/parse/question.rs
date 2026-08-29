@@ -25,6 +25,7 @@ pub(super) fn parse_init(parser: &mut lexopt::Parser) -> Result<CliCommand> {
 pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     let mut question = None;
     let mut workspace = None;
+    let mut capsule_id = None;
     let mut text = false;
     let mut json = false;
     let mut detach = false;
@@ -33,6 +34,9 @@ pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
         match argument {
             Long("help") | Short('h') => return Ok(CliCommand::Help(Some(HelpTopic::Ask))),
             Long("workspace") => workspace = Some(PathBuf::from(value(parser)?)),
+            Long("capsule") => {
+                capsule_id = Some(value(parser)?.to_string_lossy().into_owned());
+            }
             Long("json") => json = true,
             Long("text") => text = true,
             Long("detach") => detach = true,
@@ -68,6 +72,7 @@ pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     Ok(CliCommand::Ask {
         question,
         workspace,
+        capsule_id,
         text,
         detach,
         socket,

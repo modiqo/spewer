@@ -70,6 +70,7 @@ fn parses_execution_commands() -> Result<(), Box<dyn std::error::Error>> {
         CliCommand::Ask {
             question: "What is two plus two?".to_owned(),
             workspace: None,
+            capsule_id: None,
             text: false,
             detach: true,
             socket: Some(PathBuf::from("/tmp/spewer.sock")),
@@ -95,6 +96,59 @@ fn parses_execution_commands() -> Result<(), Box<dyn std::error::Error>> {
         parse(args(&["submit", "task.json"]))?,
         CliCommand::Submit {
             path: PathBuf::from("task.json"),
+            socket: None,
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn parses_ollama_commands() -> Result<(), Box<dyn std::error::Error>> {
+    assert_eq!(
+        parse(args(&[
+            "doctor",
+            "--engine",
+            "ollama",
+            "--model",
+            "qwen3:30b-a3b",
+        ]))?,
+        CliCommand::DoctorOllama {
+            model: Some("qwen3:30b-a3b".to_owned())
+        }
+    );
+    assert_eq!(
+        parse(args(&["run", "task.json", "--engine", "ollama"]))?,
+        CliCommand::RunOllama(PathBuf::from("task.json"))
+    );
+    assert_eq!(
+        parse(args(&[
+            "capsule",
+            "add",
+            "qwen3-local",
+            "--engine",
+            "ollama",
+            "--model",
+            "qwen3:30b-a3b",
+        ]))?,
+        CliCommand::CapsuleAdd {
+            capsule_id: "qwen3-local".to_owned(),
+            engine: "ollama".to_owned(),
+            model: "qwen3:30b-a3b".to_owned(),
+        }
+    );
+    assert_eq!(
+        parse(args(&[
+            "ask",
+            "What is two plus two?",
+            "--capsule",
+            "qwen3-local",
+        ]))?,
+        CliCommand::Ask {
+            question: "What is two plus two?".to_owned(),
+            workspace: None,
+            capsule_id: Some("qwen3-local".to_owned()),
+            text: false,
+            detach: false,
             socket: None,
         }
     );

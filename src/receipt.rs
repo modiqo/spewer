@@ -12,6 +12,7 @@ pub(crate) fn build_receipt(
     request: &TaskRequest,
     evidence: WorkspaceEvidence,
     wall_ms: u64,
+    engine_version: Option<String>,
 ) -> Result<Receipt> {
     let status = match projection.status {
         TaskStatus::Completed => ReceiptStatus::Completed,
@@ -49,7 +50,7 @@ pub(crate) fn build_receipt(
             kind: request.engine.kind.clone(),
             requested_model: request.engine.model.clone(),
             observed_models: projection.engine.observed_models.clone(),
-            version: Some("codex-cli 0.150.1".to_owned()),
+            version: engine_version,
         },
         capsule: crate::capsule::receipt_evidence(request),
         final_event_seq: projection.event_seq,

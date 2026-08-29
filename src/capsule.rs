@@ -1,6 +1,7 @@
 //! Durable worker descriptions advertised through live capability lookup.
 
 mod binding;
+mod creation;
 mod selection;
 
 pub use selection::{CapsuleBindingSnapshot, CapsuleEvidence, CapsuleRequest};
@@ -12,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use std::fs::{OpenOptions, read_dir};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+
+use creation::{create_at, ensure_default_at};
 
 const MANIFEST_VERSION: u32 = 1;
 const MAX_SKILL_BYTES: u64 = 1_048_576;
@@ -127,6 +130,15 @@ pub fn catalog() -> Result<CapsuleCatalog> {
     catalog_at(&catalog_root()?)
 }
 
+/// Creates one additional generic capsule without changing existing capsules.
+pub fn create(
+    capsule_id: &str,
+    description: String,
+    engine: EngineRequest,
+) -> Result<CapsuleManifest> {
+    create_at(&catalog_root()?, capsule_id, description, engine)
+}
+
 /// Binds one `SKILL.md` to an existing capsule.
 pub fn bind_skill(capsule_id: &str, source: &Path) -> Result<CapsuleManifest> {
     bind_skill_at(&catalog_root()?, capsule_id, source)
@@ -152,23 +164,6 @@ fn default_manifest() -> CapsuleManifest {
             effort: None,
         },
         skill: None,
-    }
-}
-
-fn ensure_default_at(root: &Path) -> Result<CapsuleManifest> {
-    let path = manifest_path(root, DEFAULT_CAPSULE)?;
-    match std::fs::symlink_metadata(&path) {
-        Ok(metadata) if metadata.file_type().is_file() => load_manifest(&path),
-        Ok(_metadata) => Err(Error::new(
-            ErrorKind::InvalidInput,
-            "default capsule path is not a regular file",
-        )),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let manifest = default_manifest();
-            write_new_manifest(root, &path, &manifest)?;
-            load_manifest(&path)
-        }
-        Err(error) => Err(error.into()),
     }
 }
 

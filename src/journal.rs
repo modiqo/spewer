@@ -1,4 +1,4 @@
-use crate::codex::NormalizedEvent;
+use crate::engine::NormalizedEvent;
 use crate::error::{Error, ErrorKind, Result};
 use crate::protocol::{Event, EventSource, PROTOCOL_VERSION};
 use crate::reducer::{Projection, apply};

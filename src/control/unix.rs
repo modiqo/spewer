@@ -31,10 +31,11 @@ impl LocalService {
         path: PathBuf,
         database: Database,
         codex: CodexConfig,
+        ollama: crate::ollama::OllamaConfig,
         config: SupervisorConfig,
     ) -> Result<Self> {
         let listener = bind_socket(path.clone()).await?;
-        let supervisor = match Supervisor::start_codex(database, codex, config).await {
+        let supervisor = match Supervisor::start_engines(database, codex, ollama, config).await {
             Ok(supervisor) => supervisor,
             Err(error) => {
                 remove_socket(path).await?;

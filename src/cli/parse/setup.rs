@@ -29,7 +29,7 @@ pub(super) fn parse_capsule(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     let Some(operation) = next(parser)? else {
         return Err(Error::new(
             ErrorKind::InvalidInput,
-            "capsule requires list, bind, or unbind",
+            "capsule requires add, list, bind, or unbind",
         ));
     };
     if matches!(operation, Long("help") | Short('h')) {
@@ -39,6 +39,7 @@ pub(super) fn parse_capsule(parser: &mut lexopt::Parser) -> Result<CliCommand> {
         return unexpected("capsule", &operation);
     };
     match operation.to_str() {
+        Some("add") => parse_capsule_add(parser),
         Some("list") => parse_capsule_list(parser),
         Some("bind") => parse_capsule_bind(parser),
         Some("unbind") => parse_capsule_unbind(parser),
@@ -51,6 +52,35 @@ pub(super) fn parse_capsule(parser: &mut lexopt::Parser) -> Result<CliCommand> {
             "capsule operation is not valid UTF-8",
         )),
     }
+}
+
+fn parse_capsule_add(parser: &mut lexopt::Parser) -> Result<CliCommand> {
+    let capsule_id = positional(parser, "capsule add requires a capsule id")?;
+    let mut engine = None;
+    let mut model = None;
+    while let Some(argument) = next(parser)? {
+        match argument {
+            Long("engine") => engine = Some(value(parser)?.to_string_lossy().into_owned()),
+            Long("model") => model = Some(value(parser)?.to_string_lossy().into_owned()),
+            Long("help") | Short('h') => {
+                return Ok(CliCommand::Help(Some(HelpTopic::Capsule)));
+            }
+            other => return unexpected("capsule add", &other),
+        }
+    }
+    let engine = engine.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            "capsule add requires --engine ollama",
+        )
+    })?;
+    let model =
+        model.ok_or_else(|| Error::new(ErrorKind::InvalidInput, "capsule add requires --model"))?;
+    Ok(CliCommand::CapsuleAdd {
+        capsule_id,
+        engine,
+        model,
+    })
 }
 
 fn parse_capsule_list(parser: &mut lexopt::Parser) -> Result<CliCommand> {

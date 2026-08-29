@@ -1,9 +1,12 @@
 //! One bounded engine run from validated request to receipt.
 
 mod accepted;
+mod adapter;
+mod finalize;
 mod request;
 
-pub use accepted::{fail_durable, run_codex_accepted};
+pub use accepted::{fail_durable, run_codex_accepted, run_ollama_accepted};
+pub use adapter::{run_ollama, run_ollama_durable};
 
 use crate::codex::{
     CodexClient, CodexConfig, CodexMessage, NormalizedEvent, Normalizer, thread_params, turn_params,
@@ -12,7 +15,6 @@ use crate::delivery::OutboxMessage;
 use crate::error::{Error, ErrorKind, Result};
 use crate::journal::TaskJournal;
 use crate::protocol::{Event, PROTOCOL_VERSION, Receipt, TaskHandle, TaskRequest};
-use crate::receipt::build_receipt;
 use crate::reducer::Projection;
 use crate::store::Database;
 use crate::util::{new_id, now, required_pointer};
@@ -43,6 +45,13 @@ pub(crate) struct DriveOutcome {
     pub(crate) evidence: WorkspaceEvidence,
     pub(crate) terminal: Option<NormalizedEvent>,
 }
+
+pub(crate) struct EngineRunMeta {
+    pub(crate) started: Instant,
+    pub(crate) version: Option<String>,
+}
+
+pub(crate) use finalize::{finish, finish_terminal};
 
 /// Runs one task through Codex App Server and returns a typed receipt.
 pub async fn run_codex(request: TaskRequest, config: CodexConfig) -> Result<RunResult> {
@@ -119,15 +128,31 @@ pub(super) async fn run_codex_inner(
                 &request,
                 driven.evidence,
                 terminal,
-                started,
+                EngineRunMeta {
+                    started,
+                    version: Some("codex-cli".to_owned()),
+                },
             )
             .await
         }
-        None => finish(task, handle, workspace, &request, driven.evidence, started).await,
+        None => {
+            finish(
+                task,
+                handle,
+                workspace,
+                &request,
+                driven.evidence,
+                EngineRunMeta {
+                    started,
+                    version: Some("codex-cli".to_owned()),
+                },
+            )
+            .await
+        }
     }
 }
 
-async fn accept_task<'a>(
+pub(super) async fn accept_task<'a>(
     request: &TaskRequest,
     database: Option<&'a Database>,
 ) -> Result<(String, TaskHandle, TaskJournal<'a>)> {
@@ -182,7 +207,10 @@ async fn accept_task<'a>(
     Ok((task_id, handle, task))
 }
 
-async fn record_workspace(task: &mut TaskJournal<'_>, workspace: &Workspace) -> Result<()> {
+pub(super) async fn record_workspace(
+    task: &mut TaskJournal<'_>,
+    workspace: &Workspace,
+) -> Result<()> {
     task.append(
         "workspace.prepared",
         json!({"path": workspace.path, "base_revision": workspace.base_revision}),
@@ -348,103 +376,6 @@ async fn enforce_runtime_budget(
             now()?,
         )
         .await?;
-    }
-    Ok(())
-}
-
-pub(crate) async fn finish_terminal(
-    mut task: TaskJournal<'_>,
-    handle: TaskHandle,
-    workspace: Workspace,
-    request: &TaskRequest,
-    evidence: WorkspaceEvidence,
-    mut terminal: NormalizedEvent,
-    started: Instant,
-) -> Result<RunResult> {
-    let elapsed = elapsed_ms(started)?;
-    if let Some(data) = terminal.data.as_object_mut() {
-        data.insert("wall_ms".to_owned(), Value::from(elapsed));
-    }
-    let Some(database) = task.database else {
-        task.append_normalized(terminal).await?;
-        return finish(task, handle, workspace, request, evidence, started).await;
-    };
-    let projection = task.preview_normalized(&terminal)?;
-    let mut receipt = build_receipt(&projection, request, evidence, elapsed)?;
-    price_and_enforce(request, &mut receipt).await?;
-    let finalized = database
-        .finalize(
-            crate::store::EventInput {
-                task_id: projection.task_id.clone(),
-                attempt: projection.attempt,
-                kind: terminal.kind,
-                data: terminal.data,
-                source: Some(terminal.source),
-                source_key: Some(terminal.source_key),
-                observed_at: terminal.observed_at,
-            },
-            receipt.clone(),
-            request.callback.mode.clone(),
-        )
-        .await?;
-    task.projection = finalized.append.projection;
-    if finalized.append.inserted {
-        task.events.push(finalized.append.event);
-    }
-    Ok(RunResult {
-        handle,
-        events: task.events,
-        projection: task.projection,
-        receipt,
-        callback: Some(finalized.message),
-        workspace,
-    })
-}
-
-pub(crate) async fn finish(
-    task: TaskJournal<'_>,
-    handle: TaskHandle,
-    workspace: Workspace,
-    request: &TaskRequest,
-    evidence: WorkspaceEvidence,
-    started: Instant,
-) -> Result<RunResult> {
-    let elapsed = elapsed_ms(started)?;
-    let mut receipt = build_receipt(&task.projection, request, evidence, elapsed)?;
-    price_and_enforce(request, &mut receipt).await?;
-    let callback = match task.database {
-        Some(database) => Some(
-            database
-                .commit_receipt(receipt.clone(), request.callback.mode.clone())
-                .await?,
-        ),
-        None => None,
-    };
-    Ok(RunResult {
-        handle,
-        events: task.events,
-        projection: task.projection,
-        receipt,
-        callback,
-        workspace,
-    })
-}
-
-fn elapsed_ms(started: Instant) -> Result<u64> {
-    u64::try_from(started.elapsed().as_millis())
-        .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))
-}
-
-async fn price_and_enforce(request: &TaskRequest, receipt: &mut Receipt) -> Result<()> {
-    crate::telemetry::price_from_environment(receipt).await?;
-    if receipt
-        .usage
-        .actual_cost_usd
-        .is_some_and(|cost| cost > request.budgets.cost_usd)
-    {
-        receipt.status = crate::protocol::ReceiptStatus::Escalated;
-        "Cost budget exceeded after final provider usage reconciliation."
-            .clone_into(&mut receipt.summary);
     }
     Ok(())
 }

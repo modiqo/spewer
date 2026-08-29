@@ -60,7 +60,9 @@ pub fn service_capabilities() -> Result<ServiceCapabilities> {
         .map(str::to_owned)
         .into(),
         callback_modes: ["stream", "wait", "poll"].map(str::to_owned).into(),
-        engine_kinds: ["codex-app-server"].map(str::to_owned).into(),
+        engine_kinds: ["codex-app-server", crate::ollama::ENGINE_KIND]
+            .map(str::to_owned)
+            .into(),
         max_control_bytes: MAX_CONTROL_BYTES,
         cancellation: true,
         cursor_replay: true,
@@ -171,6 +173,7 @@ mod unsupported {
             _path: PathBuf,
             _database: Database,
             _codex: CodexConfig,
+            _ollama: crate::ollama::OllamaConfig,
             _config: SupervisorConfig,
         ) -> Result<Self> {
             Err(unsupported())

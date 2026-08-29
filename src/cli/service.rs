@@ -33,6 +33,7 @@ async fn run_foreground(max_workers: usize, path: PathBuf) -> Result<()> {
         path,
         database,
         CodexConfig::default(),
+        crate::ollama::OllamaConfig::default(),
         SupervisorConfig { max_workers },
     )
     .await?;
@@ -94,7 +95,7 @@ fn spawn_service(max_workers: usize, path: &Path, stdout: File, stderr: File) ->
     let executable = std::env::current_exe()?;
     Command::new(executable)
         .arg("serve")
-        .args(["--engine", "codex", "--max-workers"])
+        .args(["--engine", "all", "--max-workers"])
         .arg(max_workers.to_string())
         .arg("--socket")
         .arg(path)

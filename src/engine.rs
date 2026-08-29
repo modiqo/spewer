@@ -1,7 +1,8 @@
 //! Public adapter contract implemented without provider-specific wire types.
 
 use crate::error::Result;
-use crate::protocol::TaskRequest;
+use crate::protocol::{EventSource, TaskRequest};
+use crate::util::{now, sha256};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
@@ -30,6 +31,42 @@ pub struct EngineEvent {
     pub data: Value,
     /// Stable source key used for deduplication.
     pub source_key: String,
+}
+
+/// One engine-neutral event before durable task sequencing.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct NormalizedEvent {
+    /// Stable normalized event type.
+    pub kind: String,
+    /// Normalized event data.
+    pub data: Value,
+    /// Engine source provenance.
+    pub source: EventSource,
+    /// Deterministic source deduplication key.
+    pub source_key: String,
+    /// RFC 3339 observation time.
+    pub observed_at: String,
+}
+
+impl EngineEvent {
+    /// Adds common provenance and observation time to one adapter event.
+    pub fn normalize(self, engine: &str) -> Result<NormalizedEvent> {
+        let payload_hash = sha256(&serde_json::to_vec(&self.data)?)?;
+        Ok(NormalizedEvent {
+            kind: self.kind,
+            data: self.data,
+            source: EventSource {
+                engine: engine.to_owned(),
+                method: self.method,
+                thread_id: None,
+                turn_id: None,
+                item_id: None,
+                payload_hash,
+            },
+            source_key: self.source_key,
+            observed_at: now()?,
+        })
+    }
 }
 
 /// Minimal harness boundary for Codex, local, or hosted engines.

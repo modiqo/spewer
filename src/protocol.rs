@@ -130,7 +130,7 @@ impl TaskRequest {
             ));
         }
         match self.engine.kind.as_str() {
-            "codex-app-server" | "fake" => {}
+            "codex-app-server" | "fake" | "ollama" => {}
             _ => return Err(ProtocolError::new("unsupported engine kind")),
         }
         nonempty("engine.model", &self.engine.model)?;

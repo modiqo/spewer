@@ -458,3 +458,35 @@ CP16 is complete. Its capsule-selection, immutable skill snapshot, prompt, recei
 **Exit gate:** Client, CLI, skill validation, installation, conformance, help, quality, and end-to-end tests pass in one CP17 packet.
 
 CP17 is complete. Its reusable harness client, three-action CLI, reference Codex skill, conflict-safe installation, help, conformance, and end-to-end evidence are recorded under `artifacts/checkpoints/CP17/README.md`.
+
+## CP18 adds a production local Qwen3 worker
+
+**Objective:** Run a local Qwen3 capsule through Ollama without changing the public task or receipt schemas.
+
+**Deliverables:**
+
+- An Ollama adapter that implements the accepted engine contract.
+- Live Ollama version and model discovery before execution.
+- A bounded prompt containing the objective, acceptance criteria, notes, projected files, and exact bound skill snapshot.
+- Normalized engine, answer, usage, and terminal events in the existing durable journal.
+- One service that routes `codex-app-server` and `ollama` tasks by the selected capsule.
+- A capsule command that registers an installed Ollama model without replacing the default Luna capsule.
+- An `ask --capsule` path for attached and detached local-model questions.
+- Explicit rejection of write or tool-dependent tasks because the first Ollama adapter performs inference without an agent tool loop.
+
+**Acceptance:**
+
+- A live `qwen3:30b-a3b` turn completes through the Ollama adapter.
+- The same task and receipt fixtures remain valid without Ollama fields.
+- A missing Ollama service or model returns a typed error.
+- A generic Qwen3 capsule and a skill-specialized Qwen3 capsule both complete.
+- The specialized prompt contains the accepted immutable skill snapshot.
+- Attached, detached, cancellation, restart, and receipt retrieval paths retain their existing behavior.
+- Capability lookup advertises both engine kinds and observes the Qwen3 capsule without restarting Spewer.
+- The receipt identifies Ollama, Qwen3, the observed token counts, and the Ollama version.
+
+**Exit gate:** Adapter, prompt, capsule, service, compatibility, quality, and live local end-to-end evidence pass in one CP18 packet.
+
+CP18 is complete. Its Ollama adapter, local Qwen3 capsule flow, dual-engine service routing,
+read-only authority boundary, live generic and specialized runs, and quality evidence are recorded
+under `artifacts/checkpoints/CP18/README.md`.

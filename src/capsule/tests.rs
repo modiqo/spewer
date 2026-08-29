@@ -1,6 +1,8 @@
-use super::{CapsuleKind, bind_skill_at, catalog_at, ensure_default_at, unbind_skill_at};
+use super::{
+    CapsuleKind, bind_skill_at, catalog_at, create_at, ensure_default_at, unbind_skill_at,
+};
 use crate::error::Result;
-use crate::protocol::DEFAULT_MODEL;
+use crate::protocol::{DEFAULT_MODEL, EngineRequest};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -69,6 +71,26 @@ fn missing_catalog_has_a_stable_implicit_default() -> Result<()> {
         first.capsules.first().map(|capsule| capsule.kind),
         Some(CapsuleKind::Generic)
     );
+    Ok(())
+}
+
+#[test]
+fn additional_capsule_is_created_once() -> Result<()> {
+    let root = temporary("create")?;
+    let engine = EngineRequest {
+        kind: "ollama".to_owned(),
+        model: "qwen3:30b-a3b".to_owned(),
+        effort: None,
+    };
+    let manifest = create_at(
+        &root,
+        "qwen3-local",
+        "Local Qwen3".to_owned(),
+        engine.clone(),
+    )?;
+    assert_eq!(manifest.engine, engine);
+    assert!(create_at(&root, "qwen3-local", "Duplicate".to_owned(), engine).is_err());
+    std::fs::remove_dir_all(root)?;
     Ok(())
 }
 

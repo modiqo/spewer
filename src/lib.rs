@@ -9,6 +9,8 @@ pub mod delivery;
 pub mod engine;
 /// Deterministic second engine used by the conformance suite.
 pub mod fake;
+/// Local open-weights inference through Ollama.
+pub mod ollama;
 /// Play-compatible handoff and exactly-once parent application.
 pub mod parent;
 /// The public wire protocol shared with parent harnesses.

@@ -1,6 +1,6 @@
 # Spewer lets your frontier harness delegate repeatable work
 
-Status: **Implemented through CP17**
+Status: **Implemented through CP18**
 
 Date: **2026-08-29**
 
@@ -10,11 +10,12 @@ Claude Code, Kimi, or another preferred harness. A lower-cost worker handles bou
 The frontier harness keeps the conversation, broad context, judgment, and final answer.
 Spewer owns the delegated task, worker capacity, restart recovery, and terminal receipt.
 
-This document has three parts:
+This document has four parts:
 
 1. Why Spewer exists and which parts make it work.
 2. How to install and use the generic Luna worker.
-3. How to specialize that worker without changing the frontier harness.
+3. How to add a local Qwen3 worker through Ollama.
+4. How to specialize either worker without changing the frontier harness.
 
 ## Part I: Spewer adds delegation without replacing your harness
 
@@ -79,7 +80,7 @@ The complete flow contains eight parts. Each part owns one kind of state.
 
 The connected visual shows where each responsibility sits.
 
-![A user request crosses the frontier skill, adapter, Spewer, and Luna worker](assets/how-it-works/07-connected-use-case.png)
+![A user request crosses the frontier skill, adapter, Spewer, and selected worker](assets/how-it-works/07-connected-use-case-cp18.png)
 
 ### The capsule describes the worker available now
 
@@ -95,8 +96,8 @@ same Spewer service and protocol.
 Spewer currently ships hosted Luna through Codex App Server. Luna is the default commodity
 worker, not an open-weights model downloaded to the machine.
 
-An open-weights engine will use the same capsule boundary. That second production engine is
-CP18 work and is not implemented today.
+CP18 adds local Qwen3 through Ollama. It uses the same capsule card, task journal, and receipt.
+The first Ollama adapter performs read-only inference and does not provide an agent tool loop.
 
 ### Capability cards describe live state
 
@@ -297,23 +298,86 @@ $ spewer install --max-workers 4
 `spewer stop` first stops acceptance and drains accepted work. The next installation starts the
 service with the new limit.
 
-Each active lease starts its own App Server worker in version 0.1. The journal, scheduler, and
-outbox coordinate those workers through one service.
+Each active lease selects its capsule engine. Codex tasks start an App Server worker. Ollama tasks
+make a bounded request to the local model server.
 
 This is local concurrent scale-out. Distributed workers on several machines are not implemented.
 
-## Part III: Specialize the same worker with a skill
+## Part III: Add a local Qwen3 worker through Ollama
+
+The second production engine runs an open-weights model without changing the frontier adapter.
+Luna remains the default, so local model setup stays optional.
+
+### Step 1: Install the model explicitly
+
+Install Ollama, then pull the CP18 reference model:
+
+```console
+$ ollama pull qwen3:30b-a3b
+```
+
+Spewer does not start a large model download implicitly. Verify the server and exact model:
+
+```console
+$ spewer doctor --engine ollama --model qwen3:30b-a3b
+```
+
+The doctor response identifies the Ollama version and installed local models.
+
+### Step 2: Add a generic Qwen3 capsule
+
+Register the installed model:
+
+```console
+$ spewer capsule add qwen3-local --engine ollama --model qwen3:30b-a3b
+```
+
+This command verifies the model before it writes the owner-private capsule manifest. It preserves
+the existing `default` Luna capsule.
+
+The running service reads the updated catalog dynamically. `spewer capabilities` now advertises
+both engine kinds and the new generic capsule.
+
+### Step 3: Ask through the local capsule
+
+Select Qwen3 for an attached question:
+
+```console
+$ spewer ask "Summarize the supplied parser notes." --capsule qwen3-local --text
+```
+
+Use the same capsule for detached work:
+
+```console
+$ spewer ask "Compare the projected test results." --capsule qwen3-local --detach
+$ spewer check <task-id>
+```
+
+The receipt records `engine.kind: ollama`, `model: qwen3:30b-a3b`, Ollama's version, token counts,
+and capsule revision.
+
+### Step 4: Keep the first local boundary honest
+
+The CP18 adapter provides read-only inference. It can use the objective, acceptance criteria,
+notes, projected UTF-8 files, and an immutable skill snapshot.
+
+It rejects command allowlists, workspace writes, and writable paths. Delegate tool-driven work to
+the Luna capsule until a local agent loop implements those capabilities.
+
+## Part IV: Specialize the same worker with a skill
 
 Specialization changes what the worker advertises. It does not replace Spewer, the service,
 the protocol, or the frontier harness.
 
-### Step 1: Bind a skill to the default capsule
+### Step 1: Bind a skill to one capsule
 
 Bind a valid skill directory or `SKILL.md`:
 
 ```console
 $ spewer capsule bind default /absolute/path/to/review-skill
 ```
+
+Replace `default` with `qwen3-local` to specialize the local worker instead.
 
 The manifest records the skill name, description, revision, digest, and private local source.
 The running service does not restart.
@@ -375,7 +439,7 @@ The sequence is now:
 1. Codex classifies the task as bounded and independently checkable.
 2. The adapter reads the live `default` card.
 3. Spewer snapshots its specialized skill before acceptance.
-4. Luna performs the task with those exact instructions.
+4. The capsule's selected Luna or Qwen3 worker performs the task with those exact instructions.
 5. Spewer stores events and emits one terminal receipt.
 6. Codex checks the receipt and gives the user its own final answer.
 
@@ -401,7 +465,8 @@ $ spewer capsule unbind default
 | Reference Codex delegation skill | **Implemented** |
 | Durable host continuation and receipt application | **Implemented for Play** |
 | Semantic ranking across several capsules | **Planned** |
-| Production open-weights engine | **Planned for CP18** |
+| Local Qwen3 inference through Ollama | **Implemented in CP18** |
+| Local-model command execution and file writes | **Not implemented** |
 | Native integrations for other frontier harnesses | **Planned** |
 | Distributed multi-machine workers | **Not implemented** |
 
@@ -422,6 +487,8 @@ to a lower-cost generic or specialized worker.
 - [Codex App Server](https://learn.chatgpt.com/docs/app-server) describes `codex app-server`, its
   stdio transport, and initialization handshake.
 - [Codex skills](https://learn.chatgpt.com/docs/build-skills) describes skill metadata and loading.
+- [Qwen3](https://github.com/QwenLM/Qwen3) documents local Ollama deployment and model names.
+- [Ollama](https://github.com/ollama/ollama) provides the local model server used by CP18.
 - [Spewer architecture](02-architecture.md), [task protocol](03-task-protocol.md),
   [capsule execution](16-capsule-bound-execution.md), and
   [frontier integration](17-frontier-integration.md) define the accepted local contracts.

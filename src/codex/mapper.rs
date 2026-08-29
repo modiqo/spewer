@@ -1,25 +1,10 @@
 use super::CodexMessage;
+use crate::engine::NormalizedEvent;
 use crate::error::{Error, ErrorKind, Result};
 use crate::protocol::EventSource;
 use crate::util::{now, sha256};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-
-/// One engine-neutral event before durable task sequencing.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct NormalizedEvent {
-    /// Stable normalized event type.
-    pub kind: String,
-    /// Normalized event data.
-    pub data: Value,
-    /// Engine source provenance.
-    pub source: EventSource,
-    /// Deterministic source deduplication key.
-    pub source_key: String,
-    /// RFC 3339 observation time.
-    pub observed_at: String,
-}
 
 /// Stateful Codex event normalizer with deterministic duplicate ordinals.
 #[derive(Debug, Default)]

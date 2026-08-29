@@ -78,6 +78,28 @@ pub(super) fn capsule_list() -> Result<()> {
     Ok(())
 }
 
+pub(super) async fn capsule_add(capsule_id: &str, engine: &str, model: &str) -> Result<()> {
+    if engine != crate::ollama::ENGINE_KIND {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "CP18 capsule add supports --engine ollama",
+        ));
+    }
+    let _doctor =
+        crate::ollama::doctor(crate::ollama::OllamaConfig::default(), Some(model)).await?;
+    let manifest = crate::capsule::create(
+        capsule_id,
+        format!("Read-only local inference through Ollama model {model}"),
+        crate::protocol::EngineRequest {
+            kind: engine.to_owned(),
+            model: model.to_owned(),
+            effort: None,
+        },
+    )?;
+    println!("{}", serde_json::to_string_pretty(&manifest)?);
+    Ok(())
+}
+
 pub(super) fn capsule_bind(capsule_id: &str, skill: &Path) -> Result<()> {
     let manifest = crate::capsule::bind_skill(capsule_id, skill)?;
     println!("{}", serde_json::to_string_pretty(&manifest)?);

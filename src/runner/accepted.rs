@@ -28,6 +28,24 @@ pub async fn run_codex_accepted(
     .await
 }
 
+/// Runs an Ollama task that a supervisor already accepted and leased.
+pub async fn run_ollama_accepted(
+    request: TaskRequest,
+    task_id: String,
+    lease_id: String,
+    config: crate::ollama::OllamaConfig,
+    database: &Database,
+) -> Result<RunResult> {
+    super::adapter::run_ollama_inner(
+        request,
+        config,
+        Some(database),
+        Some(task_id),
+        Some(lease_id),
+    )
+    .await
+}
+
 pub(super) async fn connect_engine(
     config: CodexConfig,
     database: Option<&Database>,

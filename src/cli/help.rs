@@ -73,16 +73,17 @@ COMMON FORMS
   spewer ask "<question>"                Wait and return structured JSON.
   spewer ask "<question>" --text         Wait and print an answer-first view.
   spewer ask "<question>" --detach       Queue work and return a task handle.
-  spewer serve --engine codex           Start the service in the background.
-  spewer serve --engine codex --foreground  Keep the service attached.
+  spewer ask "<question>" --capsule qwen3-local  Use a selected worker.
+  spewer serve --engine all             Start the service in the background.
+  spewer serve --engine all --foreground  Keep the service attached.
 
 COMMANDS
   install  Prepare one ready detached Luna worker.
-  capsule  List capsules or bind and unbind a specialized skill.
+  capsule  Add or list capsules, then bind or unbind a specialized skill.
   init     Write private defaults for inferred question tasks.
   ask      Ask one question through the configured model.
-  doctor   Verify Codex App Server before run.
-  serve    Run the local turn scheduler and managed App Server workers.
+  doctor   Verify Codex App Server or local Ollama before run.
+  serve    Run the local scheduler for Codex and Ollama workers.
   submit   Commit a task and queue its turn without waiting for completion.
   delegate Discover a capsule and submit one capsule-bound task.
   check    Combine observation and terminal result retrieval.
@@ -113,8 +114,8 @@ LEARN THE NEXT STEP
 const ASK: &str = r#"spewer ask - infer and run one bounded question task
 
 USAGE
-  spewer ask "<question>" [--workspace <path>] [--json | --text]
-  spewer ask "<question>" --detach [--socket <path>]
+  spewer ask "<question>" [--workspace <path>] [--capsule <id>] [--json | --text]
+  spewer ask "<question>" --detach [--capsule <id>] [--socket <path>]
 
 WHEN
   Use attached mode for one result. Use detach while 'spewer serve' is running.
@@ -130,40 +131,44 @@ NEXT
 OUTPUT
   Attached mode writes one JSON result to stdout and terminal progress to stderr.
   Text mode writes the answer to stdout and telemetry to stderr.
-  Detached mode writes one JSON task handle without waiting for App Server.
+  Detached mode writes one JSON task handle without waiting for the selected worker.
 
 EXAMPLE
   spewer ask "What is 17 multiplied by 23?"
+  spewer ask "Summarize this task" --capsule qwen3-local
   spewer ask "Inspect the parser tests" --detach
 "#;
 
-const DOCTOR: &str = r"spewer doctor - verify the Codex engine boundary
+const DOCTOR: &str = r"spewer doctor - verify one engine boundary
 
 USAGE
   spewer doctor --engine codex
+  spewer doctor --engine ollama [--model <name>]
 
 WHEN
-  Use before the first run and after changing the Codex installation.
+  Use before the first run and after changing Codex, Ollama, or a local model.
 
 STATE
   engine unknown -> engine ready
   This command creates no task and changes no durable task state.
 
 NEXT
-  If ready is true, use 'spewer run <task.json> --engine codex'.
-  If it fails, fix the reported Codex startup or protocol error, then retry doctor.
+  If ready is true, run a matching task or add an Ollama capsule.
+  If it fails, fix the reported engine or model error, then retry doctor.
 
 OUTPUT
-  One JSON object with ready, codex_version, and the App Server initialization response.
+  One JSON readiness object with the engine version and discovered capabilities.
 
 EXAMPLE
   spewer doctor --engine codex
+  spewer doctor --engine ollama --model qwen3:30b-a3b
 ";
 
 const RUN: &str = r"spewer run - execute one bounded task from JSON
 
 USAGE
   spewer run <task.json> --engine codex
+  spewer run <task.json> --engine ollama
 
 WHEN
   Use after doctor succeeds and the request defines objective, authority, budgets, engine, and callback.
@@ -183,13 +188,15 @@ OUTPUT
 
 EXAMPLE
   spewer run task.json --engine codex
+  spewer run qwen-task.json --engine ollama
 ";
 
 const SERVE: &str = r"spewer serve - run the local turn-aware supervisor
 
 USAGE
-  spewer serve --engine codex [--json] [--max-workers <count>] [--socket <path>]
-  spewer serve --engine codex --foreground [--max-workers <count>] [--socket <path>]
+  spewer serve --engine all [--json] [--max-workers <count>] [--socket <path>]
+  spewer serve --engine all --foreground [--max-workers <count>] [--socket <path>]
+  spewer serve --engine codex  Legacy alias for --engine all.
 
 WHEN
   Default mode returns control after the background service becomes ready.
@@ -210,7 +217,7 @@ OUTPUT
   Foreground mode writes one JSON readiness line before it waits.
 
 EXAMPLE
-  spewer serve --engine codex --max-workers 2
+  spewer serve --engine all --max-workers 2
 ";
 
 const SUBMIT: &str = r"spewer submit - durably queue one task through the local service
@@ -267,7 +274,7 @@ STATE
   accepting -> draining -> stopped
 
 NEXT
-  Wait for the control socket to disappear, then run 'spewer serve --engine codex'.
+  Wait for the control socket to disappear, then run 'spewer serve --engine all'.
 
 OUTPUT
   One JSON acknowledgement that draining started.
