@@ -1,6 +1,6 @@
 # Spewer
 
-Spewer is a local Rust service that lets your current AI harness delegate bounded work to
+Spewer is a local service that lets your current AI harness delegate bounded work to
 lower-cost models.
 
 Keep working in Codex, Claude Code, Kimi, or another preferred harness. Spewer runs the delegated
