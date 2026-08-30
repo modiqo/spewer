@@ -8,6 +8,7 @@ on:
       - ".github/workflows/pages.yml"
       - "site/**"
       - "assets/tutorial/01-what-spewer-does.png"
+      - "docs/assets/how-it-works/06-pluggable-ends.png"
   workflow_dispatch:
 
 permissions:
@@ -38,6 +39,7 @@ jobs:
           mkdir -p _site/assets
           cp -R site/. _site/
           cp assets/tutorial/01-what-spewer-does.png _site/assets/spewer-delegation.png
+          cp docs/assets/how-it-works/06-pluggable-ends.png _site/assets/pluggable-ends.png
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5

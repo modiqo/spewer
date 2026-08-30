@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="Example Pareto IQ chart comparing cost with checks passed">
+  <defs>
+    <pattern id="dots" width="8" height="8" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#f5f7fb"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="675" fill="#10192c"/>
+  <g fill="none" stroke="#f5f7fb" stroke-width="2">
+    <rect x="49" y="51" width="1102" height="563"/>
+    <rect x="58" y="60" width="1102" height="563" opacity="0.18"/>
+  </g>
+  <text x="82" y="104" fill="#f5f7fb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="30">PARETO IQ: COST AND CHECKS</text>
+  <g stroke="#f5f7fb" stroke-width="1.5" opacity="0.18">
+    <line x1="154" y1="164" x2="154" y2="536"/>
+    <line x1="154" y1="536" x2="1064" y2="536"/>
+    <line x1="154" y1="412" x2="1064" y2="412"/>
+    <line x1="154" y1="288" x2="1064" y2="288"/>
+    <line x1="154" y1="164" x2="1064" y2="164"/>
+    <line x1="382" y1="164" x2="382" y2="536"/>
+    <line x1="609" y1="164" x2="609" y2="536"/>
+    <line x1="837" y1="164" x2="837" y2="536"/>
+    <line x1="1064" y1="164" x2="1064" y2="536"/>
+  </g>
+  <path d="M225 460 C360 386 432 292 565 251 C704 207 845 188 1000 176" fill="none" stroke="#66e0aa" stroke-width="6" stroke-dasharray="16 13"/>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <circle cx="270" cy="433" r="19" fill="#10192c" stroke="#8eb6ff" stroke-width="9"/>
+    <text x="304" y="425" fill="#f5f7fb" font-size="25">GENERIC MODEL</text>
+    <text x="304" y="458" fill="#aab4c7" font-size="19">low cost · simple task</text>
+
+    <circle cx="565" cy="251" r="19" fill="#10192c" stroke="#66e0aa" stroke-width="9"/>
+    <text x="599" y="242" fill="#f5f7fb" font-size="25">MODEL WITH A SKILL</text>
+    <text x="599" y="275" fill="#aab4c7" font-size="19">low cost · repeat task</text>
+
+    <circle cx="1000" cy="176" r="19" fill="#10192c" stroke="#ff7c66" stroke-width="9"/>
+    <text x="966" y="141" text-anchor="end" fill="#f5f7fb" font-size="25">FRONTIER MODEL</text>
+    <text x="966" y="174" text-anchor="end" fill="#aab4c7" font-size="19">hard or new task</text>
+
+    <text x="609" y="587" text-anchor="middle" fill="#aab4c7" font-size="21">COST →</text>
+    <text x="102" y="350" text-anchor="middle" transform="rotate(-90 102 350)" fill="#aab4c7" font-size="21">CHECKS PASSED →</text>
+  </g>
+
+  <rect x="67" y="623" width="1085" height="18" fill="url(#dots)" opacity="0.85"/>
+</svg>
