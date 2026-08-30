@@ -496,3 +496,5 @@ CP20 is complete. Its evidence is under `artifacts/checkpoints/CP20/README.md`.
 **Objective:** Relay nonsecret questions and approvals through the frontier harness into the same App Server turn.
 **Acceptance:** `check` exposes `input_required`; `respond` validates and journals the exact request, rejects credentials, resumes the same task, and escalates after a 30-minute wait.
 **Exit gate:** Protocol, service, runner, CLI, skill, documentation, timeout, and end-to-end tests pass under `artifacts/checkpoints/CP25/README.md`.
+## CP26 publishes the first packaged release
+**Objective and gate:** Publish Spewer 0.2.0 in four native archives. Verify checksums, Homebrew installation, and the `spu` alias under `artifacts/checkpoints/CP26/README.md`.

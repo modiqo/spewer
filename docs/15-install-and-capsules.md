@@ -4,6 +4,15 @@ Status: **Accepted**
 
 CP15 adds the smallest setup surface that produces a useful Spewer service. It does not add a second connection ceremony between Spewer and a frontier harness.
 
+## Homebrew installs the release binary and its short alias
+
+`brew install modiqo/tap/spewer` installs the canonical `spewer` command and the `spu` alias. Both
+names execute the same binary. Building from source remains available through
+`cargo install --path . --locked`.
+
+Binary installation does not start a worker or collect credentials. The user runs `spewer install`
+or `spu install` to prepare Codex, the default capsule, and the detached service.
+
 ## `spewer install` owns first-run readiness
 
 The command follows one ordered path:

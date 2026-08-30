@@ -11,7 +11,7 @@ worker, keeps its task alive, and returns an evidence-rich receipt.
 The shortest useful path is three commands:
 
 ```console
-$ cargo install --path . --locked
+$ brew install modiqo/tap/spewer
 $ spewer install
 $ spewer ask "What is 17 multiplied by 19?"
 323
@@ -22,14 +22,24 @@ specialized skills, and concurrent workers.
 
 ## Start with one useful worker
 
-You need macOS or Linux, Rust 1.96 or newer, and Git. Spewer installs Codex CLI when it is missing.
+You need macOS or Linux and Git. Spewer installs Codex CLI when it is missing. Building Spewer from
+source also requires Rust 1.96 or newer.
 
 Spewer 0.2 uses hosted `gpt-5.6-luna` through Codex App Server. It does not download model weights
 to your machine.
 
 ### 1. Install Spewer
 
-Install the current checkout:
+Install the latest release with Homebrew:
+
+```console
+$ brew install modiqo/tap/spewer
+```
+
+Homebrew also installs `spu` as a short alias. Both names run the same binary, and this guide uses
+the canonical `spewer` name.
+
+To build the current checkout instead:
 
 ```console
 $ cargo install --path . --locked
