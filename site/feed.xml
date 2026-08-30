@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Spewer</title>
+  <id>https://modiqo.github.io/spewer/</id>
+  <link href="https://modiqo.github.io/spewer/" rel="alternate"/>
+  <link href="https://modiqo.github.io/spewer/feed.xml" rel="self"/>
+  <updated>2026-08-30T05:00:00Z</updated>
+  <author>
+    <name>Chetan Conikee</name>
+    <uri>https://github.com/conikeec</uri>
+  </author>
+  <entry>
+    <title>Spewer: Stop Spending Frontier Tokens on Routine Work</title>
+    <id>https://modiqo.github.io/spewer/</id>
+    <link href="https://modiqo.github.io/spewer/"/>
+    <published>2026-08-30T05:00:00Z</published>
+    <updated>2026-08-30T05:00:00Z</updated>
+    <summary>Why I built Spewer to delegate bounded work from Codex to Luna or Qwen3 without leaving my preferred frontier harness.</summary>
+  </entry>
+</feed>

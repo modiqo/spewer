@@ -493,8 +493,8 @@ CP20 is complete. Its evidence is under `artifacts/checkpoints/CP20/README.md`.
 ## CP24 supports explicit unsandboxed Codex tasks
 **Objective and gate:** Let one trusted Codex task disable its sandbox without weakening defaults. CP24 is complete under `artifacts/checkpoints/CP24/README.md`.
 ## CP25 continues one task through typed human input
-**Objective:** Relay nonsecret questions and approvals through the frontier harness into the same App Server turn.
-**Acceptance:** `check` exposes `input_required`; `respond` validates and journals the exact request, rejects credentials, resumes the same task, and escalates after a 30-minute wait.
-**Exit gate:** Protocol, service, runner, CLI, skill, documentation, timeout, and end-to-end tests pass under `artifacts/checkpoints/CP25/README.md`.
+**Objective and gate:** Relay nonsecret questions and approvals into the same App Server turn, with evidence under `artifacts/checkpoints/CP25/README.md`.
 ## CP26 publishes the first packaged release
 **Objective and gate:** Publish Spewer 0.2.0 in four native archives. Verify checksums, Homebrew installation, and the `spu` alias under `artifacts/checkpoints/CP26/README.md`.
+## CP27 publishes the Spewer field note
+**Objective and gate:** Explain Spewer's motivation, boundary, and Pareto evidence on a verified static GitHub Pages site under `artifacts/checkpoints/CP27/README.md`.

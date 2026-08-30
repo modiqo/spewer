@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spewer: Stop Spending Frontier Tokens on Routine Work</title>
+  <meta name="description" content="Why I built Spewer to delegate bounded work from Codex to Luna or Qwen3 without leaving my preferred frontier harness.">
+  <meta name="author" content="Chetan Conikee">
+  <meta name="theme-color" content="#0a1020">
+  <link rel="canonical" href="https://modiqo.github.io/spewer/">
+  <link rel="alternate" type="application/atom+xml" title="Spewer" href="https://modiqo.github.io/spewer/feed.xml">
+  <link rel="stylesheet" href="styles.css">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Spewer: Stop Spending Frontier Tokens on Routine Work">
+  <meta property="og:description" content="Keep Codex or Claude. Delegate bounded work to a cheaper model, then judge the receipt.">
+  <meta property="og:url" content="https://modiqo.github.io/spewer/">
+  <meta property="og:site_name" content="Spewer">
+  <meta property="og:image" content="https://modiqo.github.io/spewer/assets/spewer-delegation.png">
+  <meta property="article:published_time" content="2026-08-29T22:00:00-07:00">
+  <meta property="article:author" content="Chetan Conikee">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Spewer: Stop Spending Frontier Tokens on Routine Work">
+  <meta name="twitter:description" content="Keep your frontier harness. Send bounded work to Luna or Qwen3, then judge the receipt.">
+  <meta name="twitter:image" content="https://modiqo.github.io/spewer/assets/spewer-delegation.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "Spewer: Stop Spending Frontier Tokens on Routine Work",
+    "description": "Why I built Spewer to delegate bounded work from Codex to Luna or Qwen3 without leaving my preferred frontier harness.",
+    "datePublished": "2026-08-29T22:00:00-07:00",
+    "dateModified": "2026-08-29T22:00:00-07:00",
+    "author": {
+      "@type": "Person",
+      "name": "Chetan Conikee",
+      "url": "https://github.com/conikeec"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "Modiqo",
+      "url": "https://github.com/modiqo"
+    },
+    "mainEntityOfPage": "https://modiqo.github.io/spewer/",
+    "image": "https://modiqo.github.io/spewer/assets/spewer-delegation.png",
+    "license": "https://www.apache.org/licenses/LICENSE-2.0"
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#article">Skip to article</a>
+
+  <header class="site-header">
+    <a class="wordmark" href="./" aria-label="Spewer home">
+      <span aria-hidden="true">[</span> spewer <span aria-hidden="true">]</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#how-it-works">How it works</a>
+      <a href="#pareto">Pareto surface</a>
+      <a href="https://github.com/modiqo/spewer">GitHub ↗</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero-copy">
+        <p class="eyebrow">A field note on model delegation</p>
+        <h1 id="page-title">Spewer: Stop Spending Frontier Tokens on Routine Work</h1>
+        <p class="dek">I built a local delegation service so Codex can send bounded work to Luna or Qwen3—and give me a durable receipt without making me leave Codex.</p>
+        <div class="byline">
+          <span>By <a href="https://github.com/conikeec">Chetan Conikee</a></span>
+          <span aria-hidden="true">·</span>
+          <time datetime="2026-08-29">August 29, 2026</time>
+          <span aria-hidden="true">·</span>
+          <span>11 min read</span>
+        </div>
+        <div class="hero-actions">
+          <a class="button primary" href="https://github.com/modiqo/spewer">View Spewer on GitHub</a>
+          <a class="button secondary" href="#install">Install with Homebrew</a>
+        </div>
+      </div>
+
+      <figure class="hero-terminal" aria-label="A frontier harness delegates a bounded task through Spewer to a cheaper worker">
+        <div class="terminal-bar">
+          <span></span><span></span><span></span>
+          <code>frontier → spewer → worker</code>
+        </div>
+        <div class="terminal-body">
+          <p><span class="prompt">❯</span> codex</p>
+          <p class="terminal-request">Inspect the parser tests and summarize failures.</p>
+          <p class="terminal-event"><span>delegated</span> capsule=default model=gpt-5.6-luna</p>
+          <p class="terminal-event"><span>completed</span> checks=4/4 task=tsk_…</p>
+          <p><span class="prompt">❯</span> <strong>Frontier reviews the receipt.</strong></p>
+        </div>
+      </figure>
+    </section>
+
+    <section class="thesis-strip" aria-label="The Spewer thesis">
+      <p>Keep the frontier harness you trust.</p>
+      <span aria-hidden="true">→</span>
+      <p>Delegate bounded work.</p>
+      <span aria-hidden="true">→</span>
+      <p>Judge evidence, not confidence.</p>
+    </section>
+
+    <article id="article" class="article-shell">
+      <aside class="article-rail" aria-label="Article navigation">
+        <p>In this field note</p>
+        <ol>
+          <li><a href="#wrong-layer">The wrong layer</a></li>
+          <li><a href="#name">Why “Spewer”</a></li>
+          <li><a href="#first-principles">First principles</a></li>
+          <li><a href="#how-it-works">How it works</a></li>
+          <li><a href="#pareto">Pareto IQ</a></li>
+          <li><a href="#workflow">My workflow now</a></li>
+        </ol>
+      </aside>
+
+      <div class="article-body">
+        <section id="wrong-layer">
+          <p class="lead">For months, I paid frontier-model prices for work that did not require frontier-model judgment. I built Spewer so my preferred harness can hand routine work to a cheaper worker.</p>
+
+          <p>I am comfortable in Codex and Claude Code. Their interfaces, context handling, tools, and subscriptions fit how I work. Open harnesses such as <a href="https://github.com/anomalyco/opencode">OpenCode</a> and <a href="https://pi.dev/docs/latest">Pi</a> make model choice a first-class feature, but switching harnesses was not the problem I wanted to solve.</p>
+
+          <p>My default stack is Codex, so I reached for GPT-5.6 Sol at high or xhigh reasoning. That made sense for architecture, unfamiliar systems, and hard debugging. It made less sense for repository scans, summaries, test inventories, and other bounded tasks.</p>
+
+          <p>The convenience tax was subtle: one interface made every prompt look like a frontier prompt. I needed a delegation boundary inside the workflow I already liked.</p>
+        </section>
+
+        <section>
+          <h2>Delegate began as my private escape hatch</h2>
+
+          <p>Luna changed the shape of the problem because it handled simple work quickly and cheaply enough to be useful. I started an internal project named <code>delegate</code> to send it repetitive tasks.</p>
+
+          <p>The first version was literal. I kept the hard problem in Codex, projected a smaller objective, and asked Luna to return the result. That saved frontier attention, but it exposed the systems work hidden inside the word “delegate.”</p>
+
+          <p>A useful delegation needs more than a model switch. It needs a durable task, explicit authority, observable progress, restart behavior, and evidence the parent can judge.</p>
+        </section>
+
+        <section id="name">
+          <h2>Calvin French-Owen gave the work its name</h2>
+
+          <p>Then I read Calvin French-Owen’s <a href="https://calv.info/small-models-have-arrived">“Small Models Have Arrived.”</a> His distinction between “IQ 180” work and “token spewer” work named the split I had been feeling.</p>
+
+          <p>Some work needs the best available model because the answer is novel, ambiguous, or expensive to get wrong. Much more work needs a responsive worker that keeps pushing a known task forward.</p>
+
+          <p>Calvin’s articulation made the idea feel larger than my own token bill. I renamed <code>delegate</code> to Spewer, pulled it out of an internal project, refined its boundaries, and released it as open source.</p>
+
+          <blockquote>
+            <p>The opportunity is not to make every model equally smart. It is to stop buying maximum intelligence for work that does not need it.</p>
+          </blockquote>
+        </section>
+
+        <section>
+          <h2>Small waste becomes infrastructure at company scale</h2>
+
+          <p>Serial entrepreneur <a href="https://www.cotacapital.com/team/suresh-batchu/">Suresh Batchu</a> sharpened the operational version of this argument in a conversation. Engineers were asking models for the time and weather.</p>
+
+          <p>One weather question is trivial. Repeated across employees, agents, and automated loops, trivial requests become a material inference workload.</p>
+
+          <p>This matters because the terminal is becoming a harness interface. The shell will remain underneath, but an agent will increasingly decide which commands, models, and tools should do the work.</p>
+
+          <p>If that harness sends every request to its smartest model, token waste becomes an architectural choice. Cost control must sit in the path where work gets classified and dispatched.</p>
+        </section>
+
+        <section id="first-principles">
+          <h2>Delegation follows from four first principles</h2>
+
+          <p>Four constraints make delegation useful without replacing the harness. Together, they define Spewer’s product boundary.</p>
+
+          <ol class="principles">
+            <li>
+              <span>01</span>
+              <div>
+                <h3>Harness preference is real</h3>
+                <p>People choose Codex, Claude Code, Kimi, or another harness for the complete experience. A cost tool should not force a migration.</p>
+              </div>
+            </li>
+            <li>
+              <span>02</span>
+              <div>
+                <h3>Work has different shapes</h3>
+                <p>A bounded objective with checkable output can leave the frontier turn. An ambiguous decision with broad context should stay.</p>
+              </div>
+            </li>
+            <li>
+              <span>03</span>
+              <div>
+                <h3>Price belongs to a task class</h3>
+                <p>No model is simply “best.” A model is a good choice when it meets the quality bar for a recurring class of work.</p>
+              </div>
+            </li>
+            <li>
+              <span>04</span>
+              <div>
+                <h3>The parent keeps judgment</h3>
+                <p>The worker returns evidence. The frontier harness accepts, rejects, refines, or retries the result before answering the user.</p>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section id="how-it-works" class="wide-section">
+          <h2>Spewer sits between two pluggable ends</h2>
+
+          <p>Spewer does not replace the harness on the left or the worker on the right. It owns the durable delegation between them.</p>
+
+          <figure class="architecture-card">
+            <div class="architecture-grid">
+              <div class="architecture-column frontier-column">
+                <p class="architecture-label">Pluggable frontier</p>
+                <div class="architecture-box active-box">
+                  <span>Ships today</span>
+                  <strong>Codex + skill</strong>
+                </div>
+                <div class="architecture-box future-box">
+                  <span>Adapter boundary</span>
+                  <strong>Claude · Kimi · others</strong>
+                </div>
+              </div>
+
+              <div class="architecture-arrow" aria-hidden="true"><span>task</span>→</div>
+
+              <div class="architecture-column spewer-column">
+                <p class="architecture-label">Spewer</p>
+                <div class="architecture-core">
+                  <div><span>01</span>Lookup</div>
+                  <div><span>02</span>Journal</div>
+                  <div><span>03</span>Schedule</div>
+                  <div><span>04</span>Receipt</div>
+                </div>
+              </div>
+
+              <div class="architecture-arrow" aria-hidden="true"><span>lease</span>→</div>
+
+              <div class="architecture-column worker-column">
+                <p class="architecture-label">Pluggable worker</p>
+                <div class="architecture-box active-box">
+                  <span>Codex App Server</span>
+                  <strong>Luna</strong>
+                </div>
+                <div class="architecture-box active-box">
+                  <span>Ollama</span>
+                  <strong>Qwen3 · open weights</strong>
+                </div>
+              </div>
+            </div>
+            <div class="receipt-line"><span>typed receipt</span></div>
+            <figcaption>Today, the reference frontier integration is Codex. The service and engine contracts keep both ends replaceable.</figcaption>
+          </figure>
+
+          <p>The left adapter asks Spewer for live capability cards. Those cards describe each worker’s model, tools, network access, and current specialization.</p>
+
+          <p>Spewer snapshots the selected capsule before accepting a task. It then journals the task, leases capacity, and invokes either Codex App Server or Ollama through an engine adapter.</p>
+
+          <p>The worker can run in the foreground or continue after the frontier turn ends. Spewer preserves accepted work across service restarts and returns a typed receipt when the task becomes terminal.</p>
+
+          <p>That receipt records the observed model, token categories, tool count, wall time, capsule revision, skill identity, artifacts, and verification. Missing provider facts remain missing instead of becoming zero.</p>
+        </section>
+
+        <section>
+          <h2>The same harness can sit on both sides</h2>
+
+          <p>Codex can be the frontier on the left while Codex App Server runs Luna on the right. The user stays in one experience, but the delegated turn uses the cheaper model family.</p>
+
+          <p>This is the key abstraction: Spewer’s protocol is not a provider selector. It creates a durable task outside the parent turn, then returns evidence through the parent’s adapter.</p>
+
+          <p>Qwen3 proves the other direction. An Ollama capsule can run an open-weights model behind the same task protocol, journal, capability lookup, and receipt.</p>
+        </section>
+
+        <section>
+          <h2>A skill can turn a cheap generalist into a specialist</h2>
+
+          <p>A generic capsule advertises broad bounded work. Binding a <code>SKILL.md</code> changes that capsule to specialized without restarting Spewer.</p>
+
+          <p>The frontier discovers the new state through live capability lookup. New tasks receive an immutable skill snapshot, so the receipt can identify the exact instructions that shaped the worker.</p>
+
+          <p>This changes the economics of repeat work. The expensive model explores and crystallizes the method; a cheaper model follows that method on later tasks.</p>
+        </section>
+
+        <section id="pareto" class="wide-section">
+          <h2>Pareto IQ turns model routing into evidence</h2>
+
+          <p>A single intelligence score cannot tell me which model should handle a task. I need verified quality and actual cost for comparable work.</p>
+
+          <figure class="pareto-card">
+            <svg class="pareto-chart" viewBox="0 0 760 430" role="img" aria-labelledby="pareto-title pareto-desc">
+              <title id="pareto-title">An illustrative Pareto surface for model delegation</title>
+              <desc id="pareto-desc">Verified quality rises vertically and cost rises horizontally. Specialized and commodity workers can dominate frontier execution for bounded task classes.</desc>
+              <defs>
+                <linearGradient id="surface" x1="0" y1="1" x2="1" y2="0">
+                  <stop offset="0" stop-color="#65e0a3" stop-opacity="0.05"></stop>
+                  <stop offset="1" stop-color="#65e0a3" stop-opacity="0.28"></stop>
+                </linearGradient>
+                <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="5" result="blur"></feGaussianBlur>
+                  <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+                </filter>
+              </defs>
+              <g class="grid-lines">
+                <line x1="90" y1="345" x2="700" y2="345"></line>
+                <line x1="90" y1="280" x2="700" y2="280"></line>
+                <line x1="90" y1="215" x2="700" y2="215"></line>
+                <line x1="90" y1="150" x2="700" y2="150"></line>
+                <line x1="90" y1="85" x2="700" y2="85"></line>
+                <line x1="90" y1="345" x2="90" y2="70"></line>
+                <line x1="240" y1="345" x2="240" y2="70"></line>
+                <line x1="390" y1="345" x2="390" y2="70"></line>
+                <line x1="540" y1="345" x2="540" y2="70"></line>
+                <line x1="690" y1="345" x2="690" y2="70"></line>
+              </g>
+              <path class="pareto-fill" d="M128 288 C208 235 264 174 342 144 C430 109 530 95 665 88 L665 345 L128 345 Z"></path>
+              <path class="pareto-line" d="M128 288 C208 235 264 174 342 144 C430 109 530 95 665 88"></path>
+              <g class="point commodity" transform="translate(170 255)">
+                <circle r="8"></circle>
+                <text x="14" y="-8">generic commodity</text>
+                <text class="point-note" x="14" y="12">cheap · bounded</text>
+              </g>
+              <g class="point specialized" transform="translate(300 158)" filter="url(#glow)">
+                <circle r="9"></circle>
+                <text x="14" y="-8">specialized worker</text>
+                <text class="point-note" x="14" y="12">method + cheaper model</text>
+              </g>
+              <g class="point frontier" transform="translate(625 96)">
+                <circle r="9"></circle>
+                <text text-anchor="end" x="-14" y="-8">frontier</text>
+                <text class="point-note" text-anchor="end" x="-14" y="12">novel judgment</text>
+              </g>
+              <text class="axis-label x-label" x="395" y="405" text-anchor="middle">actual cost →</text>
+              <text class="axis-label y-label" transform="translate(28 210) rotate(-90)" text-anchor="middle">verified quality →</text>
+            </svg>
+            <figcaption>This surface is illustrative, not a benchmark. Spewer rejects comparisons across different task classes unless the caller overrides that guard.</figcaption>
+          </figure>
+
+          <p>Spewer calls this comparison Pareto IQ. Each plot-ready point keeps its model, derived cost, checks passed, checks attempted, and price-configuration hash.</p>
+
+          <p>The denominator matters. A worker that passes two of two checks is not equivalent to one that passes two of ten. The task class matters too: a parser edit and an open-ended architecture review do not belong on the same curve.</p>
+
+          <p>Version 0.2 implements the receipt data, price provenance, comparison guard, and plot-ready telemetry library. It does not yet ship a polished <code>spewer pareto</code> CLI report.</p>
+
+          <p>That boundary keeps the savings claim honest. I can say Spewer moves routine work off Sol in my workflow. I will publish a percentage only after repeated, comparable task classes produce it.</p>
+        </section>
+
+        <section id="workflow">
+          <h2>My frontier model now acts more like a manager</h2>
+
+          <p>I keep frontier models on work where their judgment changes the outcome. I delegate work where the objective, authority, and acceptance checks fit in a small contract.</p>
+
+          <div class="work-grid">
+            <div>
+              <p class="work-label frontier-label">Keep at the frontier</p>
+              <ul>
+                <li>Architecture with ambiguous tradeoffs</li>
+                <li>Exploration across unfamiliar systems</li>
+                <li>Security-sensitive decisions</li>
+                <li>Final review and user-facing judgment</li>
+              </ul>
+            </div>
+            <div>
+              <p class="work-label worker-label">Spew to a worker</p>
+              <ul>
+                <li>Repository scans and inventories</li>
+                <li>Summaries and first-pass research</li>
+                <li>Test triage with explicit checks</li>
+                <li>Repeat procedures with bound skills</li>
+              </ul>
+            </div>
+          </div>
+
+          <p>Foreground delegation gives me an answer in place. Detached delegation returns a task ID, lets the work continue, and gives me <code>watch</code>, <code>check</code>, <code>respond</code>, and <code>cancel</code>.</p>
+
+          <p>The separation also improves attention. Sol keeps the broad conversation and hard decision. Luna or Qwen3 receives only the projected task and returns a bounded result.</p>
+        </section>
+
+        <section>
+          <h2>The shell is becoming a worker behind the harness</h2>
+
+          <p>The terminal will not stop running commands. The interactive surface above those commands is becoming a harness that can plan, ask, delegate, and resume.</p>
+
+          <p>That shift creates a new systems question: which work deserves frontier inference? A model dropdown should not answer it.</p>
+
+          <p>Spewer’s bet is small. Keep the interface you prefer, give routine work a cheaper path, and make every handoff return enough evidence to judge.</p>
+        </section>
+
+        <section id="install" class="install-card wide-section">
+          <p class="eyebrow">Spewer 0.2.0 · Apache-2.0</p>
+          <h2>Install it without changing harnesses</h2>
+          <p>Homebrew installs <code>spewer</code> and its short alias, <code>spu</code>. The setup command prepares Luna, the Codex delegation skill, and the detached service.</p>
+
+          <pre><code><span class="code-comment"># Install the release</span>
+brew install modiqo/tap/spewer
+
+<span class="code-comment"># Prepare the default Luna worker</span>
+spewer install
+
+<span class="code-comment"># Prove the path</span>
+spewer ask "Return only the sum of 17 and 19."</code></pre>
+
+          <div class="install-links">
+            <a class="button primary" href="https://github.com/modiqo/spewer">Read the README</a>
+            <a class="button secondary" href="https://github.com/modiqo/spewer/blob/main/docs/how_it_works.md">Read how it works</a>
+          </div>
+        </section>
+
+        <section class="sources">
+          <h2>Notes and sources</h2>
+          <ol>
+            <li>Calvin French-Owen, <a href="https://calv.info/small-models-have-arrived">“Small Models Have Arrived,”</a> August 26, 2026.</li>
+            <li><a href="https://github.com/modiqo/spewer/blob/main/docs/how_it_works.md">How Spewer works</a> separates implemented behavior from future adapters.</li>
+            <li><a href="https://github.com/modiqo/spewer/blob/main/docs/06-observability.md">Spewer observability</a> defines receipts, cost provenance, and Pareto IQ comparisons.</li>
+            <li><a href="https://github.com/modiqo/spewer/releases/tag/v0.2.0">Spewer 0.2.0</a> ships native macOS and Linux builds for ARM64 and x86-64.</li>
+          </ol>
+        </section>
+      </div>
+    </article>
+  </main>
+
+  <footer>
+    <div>
+      <a class="wordmark" href="./"><span aria-hidden="true">[</span> spewer <span aria-hidden="true">]</span></a>
+      <p>A durable delegation service for cheaper agent work.</p>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/modiqo/spewer">GitHub</a>
+      <a href="https://github.com/modiqo/spewer/releases/tag/v0.2.0">Release</a>
+      <a href="https://github.com/modiqo/spewer/blob/main/LICENSE">License</a>
+    </div>
+  </footer>
+</body>
+</html>

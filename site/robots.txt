@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://modiqo.github.io/spewer/sitemap.xml
