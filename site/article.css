@@ -196,7 +196,7 @@ blockquote p {
 }
 
 .architecture-card,
-.pareto-card {
+.evidence-figure {
   margin: 28px 0 8px;
 }
 
@@ -214,6 +214,48 @@ figcaption {
   font-size: 0.85rem;
   font-style: italic;
   text-align: center;
+}
+
+.evidence-flow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+}
+
+.evidence-flow li {
+  position: relative;
+  min-width: 0;
+  padding: 18px 18px 18px 0;
+}
+
+.evidence-flow li:not(:last-child)::after {
+  position: absolute;
+  top: 18px;
+  right: 5px;
+  color: var(--muted);
+  content: "→";
+}
+
+.evidence-flow strong,
+.evidence-flow span {
+  display: block;
+}
+
+.evidence-flow strong {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.evidence-flow span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .work-grid {
@@ -341,6 +383,22 @@ footer p {
 
   .work-grid {
     grid-template-columns: 1fr;
+  }
+
+  .evidence-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-flow li {
+    padding: 14px 0 24px;
+  }
+
+  .evidence-flow li:not(:last-child)::after {
+    top: auto;
+    right: auto;
+    bottom: 2px;
+    left: 0;
+    content: "↓";
   }
 
   footer {

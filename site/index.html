@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&amp;family=Source+Code+Pro:wght@300;400&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="article.css?v=1">
+  <link rel="stylesheet" href="article.css?v=2">
   <meta property="og:type" content="article">
   <meta property="og:title" content="Frontier Models Need Cheaper Workers">
   <meta property="og:description" content="Keep Codex or Claude. Send simple work to Luna or Qwen3 and check the result in the same harness.">
@@ -163,6 +163,13 @@
             <figcaption>Codex is the first supported harness on the left. Luna and Qwen3 are the first workers on the right.</figcaption>
           </figure>
 
+          <p>A delegated request follows one path from the frontier harness to a selected capsule. The receipt comes back through the same integration.</p>
+
+          <figure class="architecture-card">
+            <img class="article-diagram" src="assets/connected-use-case.png" alt="A request travels from the user through a frontier harness and Spewer to a selected capsule, then returns as a receipt">
+            <figcaption>The frontier keeps the conversation. Spewer discovers the capsule, runs the task, and returns its receipt.</figcaption>
+          </figure>
+
           <p>The Codex skill asks Spewer which capsules are ready. Each capsule reports its model, tools, network access, and installed skill.</p>
 
           <p>Spewer copies the capsule settings into the new task. It records the task, finds an available worker, and calls Codex App Server or Ollama.</p>
@@ -170,6 +177,8 @@
           <p>The worker can answer in the foreground or keep running in the background. Spewer restores accepted work after a restart and returns a receipt when the task ends.</p>
 
           <p>The receipt records the model, tokens, tool calls, time, capsule version, skill, files, and checks. If a provider does not report a value, Spewer says so instead of recording zero.</p>
+
+          <p>The full <a href="https://github.com/modiqo/spewer/blob/main/docs/how_it_works.md">How Spewer Works</a> guide explains capability cards, adapters, recovery, specialization, and interactive tasks.</p>
         </section>
 
         <section>
@@ -197,16 +206,21 @@
 
           <p>I do not want one general score for a model. I want to know what a task cost and whether the result passed its checks.</p>
 
-          <figure class="pareto-card">
-            <img class="article-diagram" src="assets/pareto-iq.svg" alt="Example Pareto IQ chart comparing cost with checks passed for a generic model, a model with a skill, and a frontier model">
-            <figcaption>This is an example, not a benchmark. Spewer normally compares results only when they come from the same kind of task.</figcaption>
+          <figure class="evidence-figure">
+            <ol class="evidence-flow" aria-label="Pareto IQ comparison process">
+              <li><strong>Same task</strong><span>Start with one repeatable job.</span></li>
+              <li><strong>Same checks</strong><span>Judge every result the same way.</span></li>
+              <li><strong>Passing runs</strong><span>Discard results that miss the checks.</span></li>
+              <li><strong>Actual cost</strong><span>Compare the remaining receipts.</span></li>
+            </ol>
+            <figcaption>Pareto IQ compares evidence from like-for-like runs. It does not assign one score to every kind of work.</figcaption>
           </figure>
 
-          <p>Spewer calls this comparison Pareto IQ. Each point stores the model, cost, checks passed, checks attempted, and the prices used.</p>
+          <p>Spewer calls this comparison Pareto IQ. Each receipt stores the model, cost, checks passed, checks attempted, and the prices used.</p>
 
           <p>Two of two checks is not the same as two of ten. Spewer also keeps unlike jobs apart. A parser edit and an architecture review do not belong on the same chart.</p>
 
-          <p>Version 0.2 records receipts, prices, checks, and the data needed for this chart. It does not yet include a finished <code>spewer pareto</code> command.</p>
+          <p>Version 0.2 records receipts, prices, checks, and the data needed for this comparison. It does not yet include a finished <code>spewer pareto</code> command.</p>
 
           <p>I know Spewer moves some routine work away from Sol in my workflow. I do not yet have enough repeated runs to claim a savings percentage.</p>
         </section>
@@ -256,6 +270,11 @@
           <p class="eyebrow">Spewer 0.2.0 · Apache-2.0</p>
           <h2>Install it without changing harnesses</h2>
           <p>Homebrew installs <code>spewer</code> and its short alias, <code>spu</code>. The setup command prepares Luna, the Codex delegation skill, and the detached service.</p>
+
+          <figure class="architecture-card">
+            <img class="article-diagram" src="assets/user-experience.png" alt="Install Spewer once, ask normally in the frontier harness, and review the returned result">
+            <figcaption>The machinery stays behind three user actions: install once, ask normally, and review the result.</figcaption>
+          </figure>
 
           <pre><code><span class="code-comment"># Install the release</span>
 brew install modiqo/tap/spewer
