@@ -3,34 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Spewer: Stop Spending Frontier Tokens on Routine Work</title>
+  <title>Not Every Codex Task Needs Sol</title>
   <meta name="description" content="Why I built Spewer to send simple work from Codex to Luna or Qwen3 without changing how I work.">
   <meta name="author" content="Chetan Conikee">
-  <meta name="theme-color" content="#0a1020">
+  <meta name="theme-color" content="#fffcf0">
   <link rel="canonical" href="https://modiqo.github.io/spewer/">
   <link rel="alternate" type="application/atom+xml" title="Spewer" href="https://modiqo.github.io/spewer/feed.xml">
-  <link rel="stylesheet" href="styles.css?v=2">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&amp;family=Source+Code+Pro:wght@300;400&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="article.css?v=1">
   <meta property="og:type" content="article">
-  <meta property="og:title" content="Spewer: Stop Spending Frontier Tokens on Routine Work">
+  <meta property="og:title" content="Not Every Codex Task Needs Sol">
   <meta property="og:description" content="Keep Codex or Claude. Send simple work to Luna or Qwen3 and check the result in the same harness.">
   <meta property="og:url" content="https://modiqo.github.io/spewer/">
   <meta property="og:site_name" content="Spewer">
   <meta property="og:image" content="https://modiqo.github.io/spewer/assets/spewer-delegation.png">
   <meta property="article:published_time" content="2026-08-29T22:00:00-07:00">
-  <meta property="article:modified_time" content="2026-08-29T23:21:00-07:00">
+  <meta property="article:modified_time" content="2026-08-29T23:30:00-07:00">
   <meta property="article:author" content="Chetan Conikee">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Spewer: Stop Spending Frontier Tokens on Routine Work">
+  <meta name="twitter:title" content="Not Every Codex Task Needs Sol">
   <meta name="twitter:description" content="Keep Codex or Claude. Send simple work to Luna or Qwen3 and check the result in the same harness.">
   <meta name="twitter:image" content="https://modiqo.github.io/spewer/assets/spewer-delegation.png">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    "headline": "Spewer: Stop Spending Frontier Tokens on Routine Work",
+    "headline": "Not Every Codex Task Needs Sol",
     "description": "Why I built Spewer to send simple work from Codex to Luna or Qwen3 without changing how I work.",
     "datePublished": "2026-08-29T22:00:00-07:00",
-    "dateModified": "2026-08-29T23:21:00-07:00",
+    "dateModified": "2026-08-29T23:30:00-07:00",
     "author": {
       "@type": "Person",
       "name": "Chetan Conikee",
@@ -51,71 +54,21 @@
   <a class="skip-link" href="#article">Skip to article</a>
 
   <header class="site-header">
-    <a class="wordmark" href="./" aria-label="Spewer home">
-      <span aria-hidden="true">[</span> spewer <span aria-hidden="true">]</span>
-    </a>
+    <a class="site-title" href="./"><strong>Chetan Conikee</strong> / Spewer</a>
     <nav aria-label="Primary navigation">
       <a href="#how-it-works">How it works</a>
-      <a href="#pareto">Pareto surface</a>
-      <a href="https://github.com/modiqo/spewer">GitHub ↗</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/modiqo/spewer">GitHub</a>
     </nav>
   </header>
 
   <main>
     <section class="hero" aria-labelledby="page-title">
-      <div class="hero-copy">
-        <p class="eyebrow">Why I built Spewer</p>
-        <h1 id="page-title">Spewer: Stop Spending Frontier Tokens on Routine Work</h1>
-        <p class="dek">I built a local service so Codex can send simple work to Luna or Qwen3 and return the result to the same conversation.</p>
-        <div class="byline">
-          <span>By <a href="https://github.com/conikeec">Chetan Conikee</a></span>
-          <span aria-hidden="true">·</span>
-          <time datetime="2026-08-29">August 29, 2026</time>
-          <span aria-hidden="true">·</span>
-          <span>7 min read</span>
-        </div>
-        <div class="hero-actions">
-          <a class="button primary" href="https://github.com/modiqo/spewer">View Spewer on GitHub</a>
-          <a class="button secondary" href="#install">Install with Homebrew</a>
-        </div>
-      </div>
-
-      <figure class="hero-terminal" aria-label="A frontier harness delegates a bounded task through Spewer to a cheaper worker">
-        <div class="terminal-bar">
-          <span></span><span></span><span></span>
-          <code>frontier → spewer → worker</code>
-        </div>
-        <div class="terminal-body">
-          <p><span class="prompt">❯</span> codex</p>
-          <p class="terminal-request">Inspect the parser tests and summarize failures.</p>
-          <p class="terminal-event"><span>delegated</span> capsule=default model=gpt-5.6-luna</p>
-          <p class="terminal-event"><span>completed</span> checks=4/4 task=tsk_…</p>
-          <p><span class="prompt">❯</span> <strong>Frontier reviews the receipt.</strong></p>
-        </div>
-      </figure>
-    </section>
-
-    <section class="article-summary" aria-label="Spewer in three steps">
-      <p>Stay in Codex or Claude.</p>
-      <span aria-hidden="true">→</span>
-      <p>Send simple work to a cheaper model.</p>
-      <span aria-hidden="true">→</span>
-      <p>Check the result.</p>
+      <h1 id="page-title">Not Every Codex Task Needs Sol</h1>
+      <time class="article-date" datetime="2026-08-29">AUG 29, 2026</time>
     </section>
 
     <article id="article" class="article-shell">
-      <aside class="article-rail" aria-label="Article navigation">
-        <p>In this post</p>
-        <ol>
-          <li><a href="#why-i-built-it">Why I built it</a></li>
-          <li><a href="#name">Why “Spewer”</a></li>
-          <li><a href="#rules">The rules I wanted</a></li>
-          <li><a href="#how-it-works">How it works</a></li>
-          <li><a href="#pareto">Cost and results</a></li>
-          <li><a href="#workflow">What I delegate</a></li>
-        </ol>
-      </aside>
-
       <div class="article-body">
         <section id="why-i-built-it">
           <p class="lead">For months, I used expensive models for jobs that did not need them. I built Spewer so I could stay in Codex and send simpler jobs to Luna or Qwen3.</p>
@@ -334,7 +287,7 @@ spewer ask "Return only the sum of 17 and 19."</code></pre>
 
   <footer>
     <div>
-      <a class="wordmark" href="./"><span aria-hidden="true">[</span> spewer <span aria-hidden="true">]</span></a>
+      <a class="site-title" href="./"><strong>Chetan Conikee</strong> / Spewer</a>
       <p>Send simple agent work to a cheaper model.</p>
     </div>
     <div class="footer-links">

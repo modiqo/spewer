@@ -4,17 +4,17 @@
   <id>https://modiqo.github.io/spewer/</id>
   <link href="https://modiqo.github.io/spewer/" rel="alternate"/>
   <link href="https://modiqo.github.io/spewer/feed.xml" rel="self"/>
-  <updated>2026-08-30T06:21:00Z</updated>
+  <updated>2026-08-30T06:30:00Z</updated>
   <author>
     <name>Chetan Conikee</name>
     <uri>https://github.com/conikeec</uri>
   </author>
   <entry>
-    <title>Spewer: Stop Spending Frontier Tokens on Routine Work</title>
+    <title>Not Every Codex Task Needs Sol</title>
     <id>https://modiqo.github.io/spewer/</id>
     <link href="https://modiqo.github.io/spewer/"/>
     <published>2026-08-30T05:00:00Z</published>
-    <updated>2026-08-30T06:21:00Z</updated>
+    <updated>2026-08-30T06:30:00Z</updated>
     <summary>Why I built Spewer to send simple work from Codex to Luna or Qwen3 without changing how I work.</summary>
   </entry>
 </feed>
