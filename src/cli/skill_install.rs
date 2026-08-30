@@ -7,8 +7,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const SKILL: &[u8] = include_bytes!("../../integrations/codex/spewer-delegation/SKILL.md");
-const PREVIOUS_SKILL_DIGESTS: &[&str] =
-    &["1d6201f393166d91a94d1172f0cff955d6fab2fedbb265f7246305153fbf08ed"];
+const PREVIOUS_SKILL_DIGESTS: &[&str] = &[
+    "1d6201f393166d91a94d1172f0cff955d6fab2fedbb265f7246305153fbf08ed",
+    "eb6ca2771d7831ad3ade85e6218df8a99c8d57fa58cb2f2002f3a25b062818bb",
+];
 
 #[derive(Debug, Serialize)]
 pub(super) struct SkillInstallReport {

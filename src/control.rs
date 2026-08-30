@@ -5,12 +5,13 @@ mod unix;
 
 #[cfg(unix)]
 pub use unix::{
-    LocalService, acknowledge, cancel, capabilities, load, observe, result, stop, submit,
+    LocalService, acknowledge, cancel, capabilities, load, observe, respond, result, stop, submit,
 };
 
 use crate::capsule::CapsuleAdvertisement;
 use crate::error::{ErrorKind, Result};
-use crate::protocol::{TaskHandle, TaskRequest};
+use crate::protocol::{TaskHandle, TaskInputResponse, TaskRequest};
+use crate::reducer::Projection;
 use crate::store::{CancelOutcome, Observation, TaskResult};
 use crate::supervisor::SupervisorLoad;
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,8 @@ pub struct ServiceCapabilities {
     pub engine_kinds: Vec<String>,
     /// Maximum encoded control request size.
     pub max_control_bytes: u64,
+    /// Seconds an active worker waits for one human response.
+    pub input_timeout_seconds: u64,
     /// Whether task cancellation is implemented.
     pub cancellation: bool,
     /// Whether callers can replay events from a durable cursor.
@@ -52,6 +55,7 @@ pub fn service_capabilities() -> Result<ServiceCapabilities> {
             "submit",
             "observe",
             "result",
+            "respond",
             "cancel",
             "acknowledge",
             "load",
@@ -64,6 +68,7 @@ pub fn service_capabilities() -> Result<ServiceCapabilities> {
             .map(str::to_owned)
             .into(),
         max_control_bytes: MAX_CONTROL_BYTES,
+        input_timeout_seconds: crate::protocol::HUMAN_INPUT_TIMEOUT_SECONDS,
         cancellation: true,
         cursor_replay: true,
         capsule_revision: catalog.revision,
@@ -89,6 +94,10 @@ enum ControlRequest {
     },
     Result {
         task_id: String,
+    },
+    Respond {
+        task_id: String,
+        response: TaskInputResponse,
     },
     Cancel {
         task_id: String,
@@ -126,6 +135,11 @@ pub enum ControlResponse {
         /// Non-consuming result snapshot.
         result: TaskResult,
     },
+    /// A pending input request accepted one durable response.
+    InputAccepted {
+        /// Projection after the durable `input.resolved` event.
+        projection: Projection,
+    },
     /// Idempotent task cancellation result.
     Cancellation {
         /// Terminal projection and callback information.
@@ -155,8 +169,9 @@ pub enum ControlResponse {
 #[cfg(not(unix))]
 mod unsupported {
     use super::{
-        CancelOutcome, ControlResponse, Observation, PathBuf, Result, ServiceCapabilities,
-        SupervisorLoad, TaskHandle, TaskRequest, TaskResult,
+        CancelOutcome, ControlResponse, Observation, PathBuf, Projection, Result,
+        ServiceCapabilities, SupervisorLoad, TaskHandle, TaskInputResponse, TaskRequest,
+        TaskResult,
     };
     use crate::codex::CodexConfig;
     use crate::error::{Error, ErrorKind};
@@ -211,6 +226,15 @@ mod unsupported {
     }
 
     /// Returns an unsupported-platform error.
+    pub async fn respond(
+        _path: PathBuf,
+        _task_id: String,
+        _response: TaskInputResponse,
+    ) -> Result<Projection> {
+        Err(unsupported())
+    }
+
+    /// Returns an unsupported-platform error.
     pub async fn cancel(
         _path: PathBuf,
         _task_id: String,
@@ -248,5 +272,5 @@ mod unsupported {
 
 #[cfg(not(unix))]
 pub use unsupported::{
-    LocalService, acknowledge, cancel, capabilities, load, observe, result, stop, submit,
+    LocalService, acknowledge, cancel, capabilities, load, observe, respond, result, stop, submit,
 };

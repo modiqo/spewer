@@ -3,10 +3,12 @@
 mod accepted;
 mod adapter;
 mod finalize;
+mod human_input;
 mod request;
 
 pub use accepted::{fail_durable, run_codex_accepted, run_ollama_accepted};
 pub use adapter::{run_ollama, run_ollama_durable};
+pub(crate) use human_input::DriveOptions;
 
 use crate::codex::{
     CodexClient, CodexConfig, CodexMessage, NormalizedEvent, Normalizer, thread_params, turn_params,
@@ -55,7 +57,7 @@ pub(crate) use finalize::{finish, finish_terminal};
 
 /// Runs one task through Codex App Server and returns a typed receipt.
 pub async fn run_codex(request: TaskRequest, config: CodexConfig) -> Result<RunResult> {
-    run_codex_inner(request, config, None, None, None).await
+    run_codex_inner(request, config, None, None, None, None).await
 }
 
 /// Runs one task while committing every accepted event to `SQLite`.
@@ -64,7 +66,7 @@ pub async fn run_codex_durable(
     config: CodexConfig,
     database: &Database,
 ) -> Result<RunResult> {
-    run_codex_inner(request, config, Some(database), None, None).await
+    run_codex_inner(request, config, Some(database), None, None, None).await
 }
 
 pub(super) async fn run_codex_inner(
@@ -73,6 +75,7 @@ pub(super) async fn run_codex_inner(
     database: Option<&Database>,
     accepted_task_id: Option<String>,
     accepted_lease_id: Option<String>,
+    mut input: Option<tokio::sync::mpsc::Receiver<crate::protocol::TaskInputResponse>>,
 ) -> Result<RunResult> {
     request::resolve(&mut request, accepted_task_id.is_some())?;
     if request.engine.kind != "codex-app-server" {
@@ -110,7 +113,10 @@ pub(super) async fn run_codex_inner(
         &mut task,
         &thread_id,
         &turn_id,
-        deadline,
+        DriveOptions {
+            deadline,
+            input: input.as_mut(),
+        },
     )
     .await;
     let close_result = client.close().await;
@@ -266,13 +272,13 @@ pub(crate) async fn drive(
     task: &mut TaskJournal<'_>,
     thread_id: &str,
     turn_id: &str,
-    deadline: Instant,
+    mut options: DriveOptions<'_>,
 ) -> Result<DriveOutcome> {
     let mut normalizer = Normalizer::default();
     let redactor =
         crate::security::Redactor::from_environment(&request.permissions.environment_allowlist);
     while !task.projection.status.is_terminal() {
-        let message = match tokio::time::timeout_at(deadline, client.next_message()).await {
+        let message = match tokio::time::timeout_at(options.deadline, client.next_message()).await {
             Ok(Some(message)) => message,
             Ok(None) => CodexMessage::Exited(None),
             Err(_) => {
@@ -292,6 +298,10 @@ pub(crate) async fn drive(
                 .await?;
                 break;
             }
+        };
+        let server_request = match &message {
+            CodexMessage::ServerRequest { id, method, .. } => Some((id.clone(), method.clone())),
+            _ => None,
         };
         let mut mapped = normalizer.normalize(message)?;
         redactor.redact(&mut mapped.data);
@@ -316,16 +326,37 @@ pub(crate) async fn drive(
         }
         let input_required = mapped.kind == "input.required";
         task.append_normalized(mapped).await?;
-        enforce_runtime_budget(client, request, task, thread_id, turn_id, deadline).await?;
+        enforce_runtime_budget(client, request, task, thread_id, turn_id, options.deadline).await?;
         if input_required {
-            task.append(
-                "task.escalated",
-                json!({"reason":"parent input required"}),
-                None,
-                None,
-                now()?,
-            )
-            .await?;
+            let Some((request_id, method)) = server_request else {
+                return Err(Error::new(
+                    ErrorKind::EngineProtocol,
+                    "input event has no App Server request identity",
+                ));
+            };
+            if let Some(receiver) = options.input.as_deref_mut() {
+                let Some(waited) =
+                    human_input::await_response(client, task, receiver, request_id, &method)
+                        .await?
+                else {
+                    continue;
+                };
+                options.deadline = options.deadline.checked_add(waited).ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::InvalidInput,
+                        "wall deadline overflow after input",
+                    )
+                })?;
+            } else {
+                task.append(
+                    "task.escalated",
+                    json!({"reason":"parent input required"}),
+                    None,
+                    None,
+                    now()?,
+                )
+                .await?;
+            }
         }
     }
     let evidence = workspace

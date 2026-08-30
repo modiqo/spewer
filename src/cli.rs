@@ -6,6 +6,7 @@ mod question;
 mod service;
 mod setup;
 mod skill_install;
+mod watch;
 
 use crate::codex::{CodexConfig, doctor};
 use crate::error::Result;
@@ -40,20 +41,7 @@ pub async fn run() -> Result<()> {
             workspace,
             overwrite,
         } => question::initialize(workspace, overwrite).await?,
-        CliCommand::Ask {
-            question: prompt,
-            workspace,
-            capsule_id,
-            web,
-            text,
-            detach,
-            socket,
-        } => {
-            Box::pin(question::ask(
-                prompt, workspace, capsule_id, web, text, detach, socket,
-            ))
-            .await?;
-        }
+        command @ CliCommand::Ask { .. } => question::ask(command).await?,
         CliCommand::DoctorCodex => {
             let report = doctor(CodexConfig::default()).await?;
             let json = serde_json::to_string_pretty(&report)?;
@@ -92,6 +80,12 @@ pub async fn run() -> Result<()> {
             socket,
         } => observe(task_id, after, socket).await?,
         CliCommand::Result { task_id, socket } => result(task_id, socket).await?,
+        CliCommand::Respond {
+            task_id,
+            request_id,
+            response,
+            socket,
+        } => respond(task_id, request_id, response, socket).await?,
         CliCommand::Cancel {
             task_id,
             reason,
@@ -99,6 +93,7 @@ pub async fn run() -> Result<()> {
         } => cancel(task_id, reason, socket).await?,
         CliCommand::Status(task_id) => show_status(task_id).await?,
         CliCommand::Tail { task_id, after } => tail(task_id, after).await?,
+        CliCommand::Watch { task_id, after } => watch::run(task_id, after).await?,
         CliCommand::Rebuild(task_id) => rebuild(task_id).await?,
         CliCommand::Resume(task_id) => resume(task_id).await?,
         CliCommand::Recover => recover().await?,
@@ -222,6 +217,25 @@ async fn result(task_id: String, socket: Option<PathBuf>) -> Result<()> {
             "result": result
         }))?
     );
+    Ok(())
+}
+
+async fn respond(
+    task_id: String,
+    request_id: serde_json::Value,
+    response: serde_json::Value,
+    socket: Option<PathBuf>,
+) -> Result<()> {
+    let projection = crate::control::respond(
+        socket_path(socket)?,
+        task_id,
+        crate::protocol::TaskInputResponse {
+            request_id,
+            response,
+        },
+    )
+    .await?;
+    println!("{}", serde_json::to_string_pretty(&projection)?);
     Ok(())
 }
 

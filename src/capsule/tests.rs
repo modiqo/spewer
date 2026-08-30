@@ -19,7 +19,7 @@ fn default_capsule_specializes_and_returns_to_generic() -> Result<()> {
     std::fs::create_dir_all(skill_parent)?;
     std::fs::write(
         &skill,
-        "---\nname: arithmetic\ndescription: Solve bounded arithmetic\nversion: 2\n---\nDo arithmetic.\n",
+        "---\nname: arithmetic\ndescription: >\n  Solve bounded arithmetic across\n  several lines.\nversion: 2\n---\nDo arithmetic.\n",
     )?;
 
     let manifest = ensure_default_at(&root.join("capsules"))?;
@@ -36,6 +36,10 @@ fn default_capsule_specializes_and_returns_to_generic() -> Result<()> {
     assert_eq!(
         bound.skill.as_ref().map(|skill| skill.name.as_str()),
         Some("arithmetic")
+    );
+    assert_eq!(
+        bound.skill.as_ref().map(|skill| skill.description.as_str()),
+        Some("Solve bounded arithmetic across several lines.")
     );
     let specialized = catalog_at(&root.join("capsules"))?;
     let specialized_capsule = specialized.capsules.first().ok_or_else(|| {

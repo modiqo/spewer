@@ -77,9 +77,19 @@ Without a plan, Spewer displays the current item, recent activity, elapsed time,
 
 ## Requests enter the parent approval path
 
-When Codex requests approval or user input, Spewer stores `input.required` before notifying the parent. The parent response includes the Spewer request identifier.
+When Codex requests approval or user input, Spewer stores `input.required` before notifying the parent. The projection includes the native request identifier and typed request shape.
 
-Spewer records the response before sending it to App Server. A restarted Spewer can therefore determine whether delivery remains pending.
+The parent asks the user and calls `respond` with that exact identifier. Spewer validates the
+method-specific response, rejects credential prompts, stores `input.resolved`, and sends the
+response into the same App Server turn. Human wait time pauses the task wall budget.
+
+An approved skill may start its provider-owned OAuth browser from the delegated Codex turn. The
+user completes OAuth there. Spewer never accepts credentials, tokens, cookies, or authorization
+codes through `respond`.
+
+An unanswered boundary stalls and escalates after 30 minutes, then releases the worker. A service
+crash while waiting still fails closed as uncertain execution; cross-restart continuation of the
+live App Server request is not implemented.
 
 ## Interruption enforces external budgets
 

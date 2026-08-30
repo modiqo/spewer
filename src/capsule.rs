@@ -3,6 +3,7 @@
 mod advertisement;
 mod binding;
 mod creation;
+mod front_matter;
 mod selection;
 
 pub use selection::{CapsuleBindingSnapshot, CapsuleEvidence, CapsuleRequest};
@@ -248,7 +249,7 @@ fn read_skill(source: &Path) -> Result<SkillBinding> {
     let bytes = std::fs::read(&path)?;
     let text = std::str::from_utf8(&bytes)
         .map_err(|_| Error::new(ErrorKind::InvalidInput, "SKILL.md is not valid UTF-8"))?;
-    let metadata = parse_front_matter(text)?;
+    let metadata = front_matter::parse(text)?;
     let digest = sha256(&bytes)?;
     let revision = match metadata.version {
         Some(version) => version,
@@ -264,68 +265,6 @@ fn read_skill(source: &Path) -> Result<SkillBinding> {
         digest,
         source: path_string(&path)?,
     })
-}
-
-struct SkillMetadata {
-    name: String,
-    description: String,
-    version: Option<String>,
-}
-
-fn parse_front_matter(text: &str) -> Result<SkillMetadata> {
-    let mut lines = text.lines();
-    if lines.next() != Some("---") {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "SKILL.md must start with YAML front matter",
-        ));
-    }
-    let mut name = None;
-    let mut description = None;
-    let mut version = None;
-    let mut closed = false;
-    for line in lines {
-        if line.trim() == "---" {
-            closed = true;
-            break;
-        }
-        if let Some((key, value)) = line.split_once(':') {
-            let value = unquote(value.trim());
-            match key.trim() {
-                "name" if !value.is_empty() => name = Some(value.to_owned()),
-                "description" if !value.is_empty() => description = Some(value.to_owned()),
-                "version" if !value.is_empty() => version = Some(value.to_owned()),
-                _ => {}
-            }
-        }
-    }
-    if !closed {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "SKILL.md front matter is not closed",
-        ));
-    }
-    Ok(SkillMetadata {
-        name: name.ok_or_else(|| Error::new(ErrorKind::InvalidInput, "skill name is missing"))?,
-        description: description
-            .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "skill description is missing"))?,
-        version,
-    })
-}
-
-fn unquote(value: &str) -> &str {
-    let quoted = value
-        .strip_prefix('"')
-        .and_then(|inner| inner.strip_suffix('"'))
-        .or_else(|| {
-            value
-                .strip_prefix('\'')
-                .and_then(|inner| inner.strip_suffix('\''))
-        });
-    match quoted {
-        Some(inner) => inner,
-        None => value,
-    }
 }
 
 fn load_manifest(path: &Path) -> Result<CapsuleManifest> {

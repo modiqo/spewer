@@ -24,7 +24,7 @@ specialized skills, and concurrent workers.
 
 You need macOS or Linux, Rust 1.96 or newer, and Git. Spewer installs Codex CLI when it is missing.
 
-Version 0.1 uses hosted `gpt-5.6-luna` through Codex App Server. It does not download model weights
+Spewer 0.2 uses hosted `gpt-5.6-luna` through Codex App Server. It does not download model weights
 to your machine.
 
 ### 1. Install Spewer
@@ -76,6 +76,46 @@ $ spewer check <task-id>
 
 When `ready` becomes `true`, the response contains the stable terminal receipt. Until then, wait
 for `observation.poll_after_ms` before checking again.
+
+Follow the worker when you need to debug model or skill activity:
+
+```console
+$ spewer watch <task-id>
+```
+
+The first lines identify the accepted capsule, engine, and model. They also show its specialization
+and skill digest. Codex traces then show safe tool names such as `play-machine`.
+
+If a detached Codex worker needs a date range, approval, or another nonsecret answer,
+`spewer check` reports `input_required` and includes `projection.pending_input`. Answer the exact
+request without replacing the task:
+
+```console
+$ spewer respond <task-id> 99 \
+    --response '{"answers":{"dates":{"answers":["August 1–15"]}}}'
+$ spewer check <task-id>
+```
+
+The bundled frontier skill performs this relay from your existing Codex conversation: it asks you,
+records `input.resolved`, and resumes the same worker turn. Spewer rejects credential prompts;
+authenticate directly with the provider, then relay only a nonsecret confirmation or choice. An
+unanswered input request escalates after 30 minutes and releases the worker. The task wall budget
+does not run while a timely human answer is pending.
+
+Ollama traces emit a durable `model active` heartbeat each second until the response arrives. Both
+engines show usage and terminal state. `watch` omits hidden reasoning, raw commands, arguments,
+tool output, and secrets. Use `spewer tail <task-id>` for the complete machine-readable event log.
+
+Some stateful skills need their existing host caches and owner-private runtime state. For one
+explicitly trusted Codex task, disable the sandbox without changing the capsule default:
+
+```console
+$ spewer ask "Run the stateful skill" --capsule play-codex \
+    --danger-full-access --detach
+```
+
+This flag grants that task unrestricted filesystem and network access. `--no-sandbox` is an alias.
+It is rejected for Ollama capsules and never applies implicitly to another task.
 
 Cancel work you no longer need:
 
@@ -202,7 +242,36 @@ $ spewer capabilities
 ```
 
 The `default` capsule now reports `"kind": "specialized"` with the skill name, revision, and
-digest. New delegated tasks receive an immutable copy of those instructions.
+digest. New tasks receive an immutable instruction snapshot and explicitly activate that skill.
+
+To debug a skill without changing the generic default, create a named Luna capsule and bind it:
+
+```console
+$ spewer capsule add play-codex --engine codex-app-server --model gpt-5.6-luna
+$ spewer capsule bind play-codex /absolute/path/to/play/SKILL.md
+$ spewer ask "play cheat-sheet" --capsule play-codex --detach
+$ spewer watch <task-id>
+```
+
+The capsule header identifies the accepted Play revision. A `commandExecution/play-machine` line
+confirms that Luna invoked the installed Play runtime. Arguments and output remain private.
+
+An interactive Play can keep the same Spewer task while it collects parameters, approval, and
+provider authentication. This command starts a concrete Gmail example:
+
+```console
+$ spewer ask \
+    "Use the exact Play modiqo/retrieve-rideshare-receipts." \
+    --capsule play-codex --danger-full-access --detach
+$ spewer watch <task-id>
+```
+
+The frontier relays nonsecret dates and approval with `spewer respond`. After approval, the Play
+can open its scoped OAuth browser from Luna. Complete sign-in in that browser. Credentials, tokens,
+cookies, and authorization codes never pass through Spewer responses.
+
+Inferred questions allow 1,000,000 cumulative input tokens by default. Cached context and repeated
+tool turns count toward this boundary; it is not a one-million-token context window.
 
 Ask Codex to use it:
 
@@ -230,7 +299,7 @@ $ spewer install --max-workers 4
 `spewer stop` stops new acceptance and drains accepted work first. The next installation starts
 the service with the new limit.
 
-Version 0.1 scales across local worker processes. Distributed workers on several machines are not
+Spewer 0.2 scales across local worker processes. Distributed workers on several machines are not
 implemented yet.
 
 ## Spewer keeps delegated work accountable
@@ -267,6 +336,9 @@ never converts missing price data into zero.
 | Local Qwen3 inference through Ollama | Implemented in CP18 |
 | Bounded local-model web search | Implemented in CP19 |
 | Persisted default capsule and self-describing ask options | Implemented in CP20 |
+| Safe live activity trace for Codex and Ollama | Implemented in CP23 |
+| Explicit unsandboxed authority for one Codex task | Implemented in CP24 |
+| Same-task typed human input with a 30-minute timeout | Implemented in CP25 |
 | Local-model command execution and file writes | Not implemented |
 | Native integrations for other frontier harnesses | Planned |
 | Distributed multi-machine workers | Not implemented |
@@ -286,7 +358,7 @@ Inferred `spewer ask` tasks use read-only filesystem authority and deny network 
 - [Play integration](docs/10-play-integration.md) defines the first complete durable parent
   adapter.
 - [Design index](docs/readme.md) links every accepted contract and decision.
-- [Checkpoint evidence](artifacts/checkpoints) records passed proof through CP20.
+- [Checkpoint evidence](artifacts/checkpoints) records passed proof through CP25.
 
 ## Build and verify Spewer
 

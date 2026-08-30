@@ -9,6 +9,7 @@ use crate::receipt::build_failure_receipt;
 use crate::store::{Database, EventInput};
 use crate::util::now;
 use serde_json::json;
+use tokio::sync::mpsc;
 
 /// Runs a task that a supervisor already accepted and leased.
 pub async fn run_codex_accepted(
@@ -17,6 +18,7 @@ pub async fn run_codex_accepted(
     lease_id: String,
     config: CodexConfig,
     database: &Database,
+    input: mpsc::Receiver<crate::protocol::TaskInputResponse>,
 ) -> Result<RunResult> {
     run_codex_inner(
         request,
@@ -24,6 +26,7 @@ pub async fn run_codex_accepted(
         Some(database),
         Some(task_id),
         Some(lease_id),
+        Some(input),
     )
     .await
 }

@@ -3,7 +3,8 @@
 use crate::capsule::{CapsuleAdvertisement, CapsuleRequest};
 use crate::control::ServiceCapabilities;
 use crate::error::{Error, ErrorKind, Result};
-use crate::protocol::{TaskHandle, TaskRequest};
+use crate::protocol::{TaskHandle, TaskInputResponse, TaskRequest};
+use crate::reducer::Projection;
 use crate::store::{CancelOutcome, Observation, TaskResult};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -93,6 +94,15 @@ impl HarnessClient {
     /// Cancels queued or active work idempotently.
     pub async fn cancel(&self, task_id: String, reason: String) -> Result<CancelOutcome> {
         crate::control::cancel(self.socket.clone(), task_id, reason).await
+    }
+
+    /// Answers a typed human boundary and continues the same delegated task.
+    pub async fn respond(
+        &self,
+        task_id: String,
+        response: TaskInputResponse,
+    ) -> Result<Projection> {
+        crate::control::respond(self.socket.clone(), task_id, response).await
     }
 }
 

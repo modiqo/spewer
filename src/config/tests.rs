@@ -16,6 +16,7 @@ fn config_is_private_read_only_and_replacement_is_guarded() -> Result<()> {
     let request = loaded.infer_question("What is two plus two?", None)?;
     assert_eq!(request.engine.model, DEFAULT_MODEL);
     assert_eq!(request.permissions.filesystem, "read-only");
+    assert_eq!(request.budgets.tokens, 1_000_000);
     assert!(
         matches!(write_new(&path, &config), Err(error) if error.kind() == ErrorKind::InvalidInput)
     );

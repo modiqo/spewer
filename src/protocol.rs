@@ -1,5 +1,9 @@
 //! Engine-neutral request, event, checkpoint, and receipt types.
 
+mod input;
+
+pub use input::TaskInputResponse;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
@@ -7,6 +11,8 @@ use std::path::{Component, Path};
 
 /// The current wire protocol version.
 pub const PROTOCOL_VERSION: &str = "0.1";
+/// Maximum time a worker may hold a human-input boundary open.
+pub const HUMAN_INPUT_TIMEOUT_SECONDS: u64 = 30 * 60;
 /// Default commodity model selected when a request omits `engine.model`.
 pub const DEFAULT_MODEL: &str = "gpt-5.6-luna";
 
@@ -103,7 +109,7 @@ impl TaskRequest {
             &self.permissions.writable_paths,
         )?;
         match self.permissions.filesystem.as_str() {
-            "read-only" | "workspace-write" => {}
+            "read-only" | "workspace-write" | "danger-full-access" => {}
             _ => return Err(ProtocolError::new("unsupported filesystem permission")),
         }
         match self.permissions.network.as_str() {
@@ -204,7 +210,7 @@ pub struct TaskContext {
 /// Worker authority requested by the parent.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Permissions {
-    /// Filesystem policy: `read-only` or `workspace-write`.
+    /// Filesystem policy: `read-only`, `workspace-write`, or `danger-full-access`.
     pub filesystem: String,
     /// Network policy: `deny` or `allow`.
     pub network: String,

@@ -8,7 +8,7 @@ mod wire;
 
 pub use crate::engine::NormalizedEvent;
 pub use mapper::Normalizer;
-pub(crate) use params::{thread as thread_params, turn as turn_params};
+pub(crate) use params::{sandbox_name, thread as thread_params, turn as turn_params};
 pub use process::{CodexClient, CodexConfig, CodexMessage};
 
 use crate::error::{Error, ErrorKind, Result};

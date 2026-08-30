@@ -140,6 +140,12 @@ fn capsule_guidance(
         command.push("--web".to_owned());
         command
     });
+    let danger_available = capsule.engine.kind == "codex-app-server";
+    let danger_example = danger_available.then(|| {
+        let mut command = ask.clone();
+        command.push("--danger-full-access".to_owned());
+        command
+    });
     json!({
         "default": is_default,
         "capability_source": "current process",
@@ -150,6 +156,11 @@ fn capsule_guidance(
                 "--web": {
                     "available": web_available,
                     "meaning": "allow this task to use the advertised web_search tool"
+                },
+                "--danger-full-access": {
+                    "available": danger_available,
+                    "alias": "--no-sandbox",
+                    "meaning": "disable the Codex sandbox and allow filesystem plus network access for this task"
                 }
             },
             "output": {
@@ -157,29 +168,46 @@ fn capsule_guidance(
                 "--json": "structured answer and receipt",
                 "--detach": "durable task handle"
             },
-            "web_example": web_example
+            "web_example": web_example,
+            "danger_example": danger_example
         },
         "detached_service_check": ["spewer", "capabilities"]
     })
 }
 
 pub(super) async fn capsule_add(capsule_id: &str, engine: &str, model: &str) -> Result<()> {
-    if engine != crate::ollama::ENGINE_KIND {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "CP18 capsule add supports --engine ollama",
-        ));
-    }
-    let doctor = crate::ollama::doctor(crate::ollama::OllamaConfig::default(), Some(model)).await?;
-    let resolved_model = doctor.required_model.ok_or_else(|| {
-        Error::new(
-            ErrorKind::EngineProtocol,
-            "Ollama discovery omitted the required model",
-        )
-    })?;
+    let (description, resolved_model) = match engine {
+        crate::ollama::ENGINE_KIND => {
+            let doctor =
+                crate::ollama::doctor(crate::ollama::OllamaConfig::default(), Some(model)).await?;
+            let resolved_model = doctor.required_model.ok_or_else(|| {
+                Error::new(
+                    ErrorKind::EngineProtocol,
+                    "Ollama discovery omitted the required model",
+                )
+            })?;
+            (
+                format!("Read-only local inference through Ollama model {resolved_model}"),
+                resolved_model,
+            )
+        }
+        "codex-app-server" => {
+            let _doctor = doctor(CodexConfig::default()).await?;
+            (
+                format!("Bounded work through Codex App Server model {model}"),
+                model.to_owned(),
+            )
+        }
+        other => {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!("unsupported capsule engine {other}; use codex-app-server or ollama"),
+            ));
+        }
+    };
     let manifest = crate::capsule::create(
         capsule_id,
-        format!("Read-only local inference through Ollama model {resolved_model}"),
+        description,
         crate::protocol::EngineRequest {
             kind: engine.to_owned(),
             model: resolved_model,

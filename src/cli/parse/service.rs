@@ -159,6 +159,46 @@ pub(super) fn parse_cancel(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     })
 }
 
+pub(super) fn parse_respond(parser: &mut lexopt::Parser) -> Result<CliCommand> {
+    let mut task_id = None;
+    let mut request_id = None;
+    let mut response = None;
+    let mut socket = None;
+    while let Some(argument) = next(parser)? {
+        match argument {
+            Long("help") | Short('h') => return Ok(CliCommand::Help(Some(HelpTopic::Respond))),
+            Value(value) if task_id.is_none() => {
+                task_id = Some(value.to_string_lossy().into_owned());
+            }
+            Value(value) if request_id.is_none() => {
+                let text = value.to_string_lossy();
+                request_id = Some(match serde_json::from_str(&text) {
+                    Ok(value) => value,
+                    Err(_) => serde_json::Value::String(text.into_owned()),
+                });
+            }
+            Long("response") => {
+                response = Some(serde_json::from_str(&value(parser)?.to_string_lossy())?);
+            }
+            Long("socket") => socket = Some(PathBuf::from(value(parser)?)),
+            other => return unexpected("respond", &other),
+        }
+    }
+    Ok(CliCommand::Respond {
+        task_id: task_id
+            .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "respond requires a task id"))?,
+        request_id: request_id
+            .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "respond requires a request id"))?,
+        response: response.ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                "respond requires --response <json>",
+            )
+        })?,
+        socket,
+    })
+}
+
 fn parse_workers(value: &std::ffi::OsStr) -> Result<usize> {
     value
         .to_string_lossy()

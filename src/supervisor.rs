@@ -1,5 +1,6 @@
 //! FIFO turn scheduling across a bounded set of App Server workers.
 
+mod input;
 mod manager;
 mod process_custody;
 #[cfg(test)]
@@ -7,7 +8,8 @@ mod tests;
 
 use crate::codex::CodexConfig;
 use crate::error::{Error, ErrorKind, Result};
-use crate::protocol::{TaskHandle, TaskRequest};
+use crate::protocol::{TaskHandle, TaskInputResponse, TaskRequest};
+use crate::reducer::Projection;
 use crate::store::{CancelOutcome, Database, Observation, TaskResult};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -192,6 +194,24 @@ impl SupervisorHandle {
         reply_rx.await.map_err(|_| closed())?
     }
 
+    /// Durably answers the exact input request blocking one active task.
+    pub async fn respond(
+        &self,
+        task_id: String,
+        response: TaskInputResponse,
+    ) -> Result<Projection> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.commands
+            .send(Command::Respond {
+                task_id,
+                response,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| closed())?;
+        reply_rx.await.map_err(|_| closed())?
+    }
+
     /// Records one consumer acknowledgement through the service owner.
     pub async fn acknowledge(&self, message_id: String, consumer_id: String) -> Result<bool> {
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -229,6 +249,11 @@ enum Command {
         reason: String,
         reply: oneshot::Sender<Result<CancelOutcome>>,
     },
+    Respond {
+        task_id: String,
+        response: TaskInputResponse,
+        reply: oneshot::Sender<Result<Projection>>,
+    },
     Acknowledge {
         message_id: String,
         consumer_id: String,
@@ -244,6 +269,7 @@ trait TurnWorker: Send + Sync {
         task_id: String,
         lease_id: String,
         database: Arc<Database>,
+        input: mpsc::Receiver<TaskInputResponse>,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 }
 
@@ -265,12 +291,14 @@ impl TurnWorker for CodexWorker {
         task_id: String,
         lease_id: String,
         database: Arc<Database>,
+        input: mpsc::Receiver<TaskInputResponse>,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
         let config = self.config.clone();
         Box::pin(async move {
-            let _result =
-                crate::runner::run_codex_accepted(request, task_id, lease_id, config, &database)
-                    .await?;
+            let _result = crate::runner::run_codex_accepted(
+                request, task_id, lease_id, config, &database, input,
+            )
+            .await?;
             Ok(())
         })
     }
@@ -283,6 +311,7 @@ impl TurnWorker for EngineWorker {
         task_id: String,
         lease_id: String,
         database: Arc<Database>,
+        input: mpsc::Receiver<TaskInputResponse>,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
         let codex = self.codex.clone();
         let ollama = self.ollama.clone();
@@ -290,7 +319,7 @@ impl TurnWorker for EngineWorker {
             match request.engine.kind.as_str() {
                 "codex-app-server" => {
                     let _result = crate::runner::run_codex_accepted(
-                        request, task_id, lease_id, codex, &database,
+                        request, task_id, lease_id, codex, &database, input,
                     )
                     .await?;
                 }

@@ -288,11 +288,18 @@ fn assert_capabilities(home: &Path, fake: &Path) -> Result<(), Box<dyn std::erro
             "submit",
             "observe",
             "result",
+            "respond",
             "cancel",
             "acknowledge",
             "load",
             "stop"
         ]))
+    );
+    assert_eq!(
+        capabilities
+            .get("input_timeout_seconds")
+            .and_then(serde_json::Value::as_u64),
+        Some(1_800)
     );
     Ok(())
 }
@@ -464,7 +471,7 @@ fn ensure_success(output: &Output, command: &str) -> Result<(), Box<dyn std::err
 
 fn temporary(name: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    Ok(std::env::temp_dir().join(format!("spewer-{name}-{}-{nanos}", std::process::id())))
+    Ok(PathBuf::from("/tmp").join(format!("sp-{name}-{}-{nanos}", std::process::id())))
 }
 
 fn path(path: &Path) -> Result<&str, Box<dyn std::error::Error>> {

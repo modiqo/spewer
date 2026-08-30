@@ -10,6 +10,7 @@ use crate::store::Database;
 use crate::util::now;
 use crate::workspace::{Workspace, WorkspaceEvidence};
 use serde_json::json;
+use std::future::Future;
 use std::time::Duration;
 use tokio::time::Instant;
 
@@ -55,7 +56,14 @@ pub(super) async fn run_ollama_inner(
     };
     let version = Some(format!("ollama {}", engine.version()));
     let timeout = Duration::from_secs(request.budgets.wall_seconds);
-    let executed = tokio::time::timeout(timeout, engine.execute(&request)).await;
+    let executed = execute_observed(
+        &mut task,
+        started,
+        timeout,
+        Duration::from_secs(1),
+        engine.execute(&request),
+    )
+    .await?;
     let events = match executed {
         Ok(Ok(events)) => events,
         Ok(Err(error)) => return fail_run(database, &request, task_id, error).await,
@@ -83,6 +91,43 @@ pub(super) async fn run_ollama_inner(
         }
     };
     consume_events(events, task, handle, workspace, &request, started, version).await
+}
+
+async fn execute_observed<F>(
+    task: &mut TaskJournal<'_>,
+    started: Instant,
+    timeout: Duration,
+    heartbeat_period: Duration,
+    future: F,
+) -> Result<std::result::Result<Result<Vec<crate::engine::EngineEvent>>, tokio::time::error::Elapsed>>
+where
+    F: Future<Output = Result<Vec<crate::engine::EngineEvent>>>,
+{
+    let mut executed = Box::pin(tokio::time::timeout(timeout, future));
+    let first_heartbeat = Instant::now()
+        .checked_add(heartbeat_period)
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "heartbeat deadline overflow"))?;
+    let mut heartbeat = tokio::time::interval_at(first_heartbeat, heartbeat_period);
+    let executed = loop {
+        tokio::select! {
+            biased;
+            result = &mut executed => break result,
+            _ = heartbeat.tick() => {
+                task.append(
+                    "task.heartbeat",
+                    json!({
+                        "activity": "model_active",
+                        "engine": ENGINE_KIND,
+                        "elapsed_ms": elapsed_ms(started)?
+                    }),
+                    None,
+                    None,
+                    now()?,
+                ).await?;
+            }
+        }
+    };
+    Ok(executed)
 }
 
 async fn fail_run(
@@ -185,4 +230,50 @@ async fn capture_terminal(
 fn elapsed_ms(started: Instant) -> Result<u64> {
     u64::try_from(started.elapsed().as_millis())
         .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::execute_observed;
+    use crate::journal::TaskJournal;
+    use crate::protocol::TaskRequest;
+    use crate::reducer::Projection;
+    use crate::util::now;
+    use std::time::Duration;
+    use tokio::time::Instant;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn silent_inference_emits_model_active_heartbeats()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut request: TaskRequest =
+            serde_json::from_str(include_str!("../../tests/fixtures/task-request.json"))?;
+        request.engine.kind = "ollama".to_owned();
+        let created_at = now()?;
+        let mut task = TaskJournal {
+            projection: Projection::initial("tsk_heartbeat".to_owned(), &request, created_at),
+            events: Vec::new(),
+            database: None,
+        };
+        let result = execute_observed(
+            &mut task,
+            Instant::now(),
+            Duration::from_secs(1),
+            Duration::from_millis(5),
+            async {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                Ok(Vec::new())
+            },
+        )
+        .await?;
+        assert!(result?.is_ok());
+        assert!(task.events.iter().any(|event| {
+            event.kind == "task.heartbeat"
+                && event
+                    .data
+                    .get("activity")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("model_active")
+        }));
+        Ok(())
+    }
 }

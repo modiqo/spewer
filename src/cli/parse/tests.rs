@@ -72,6 +72,7 @@ fn parses_execution_commands() -> Result<(), Box<dyn std::error::Error>> {
             workspace: None,
             capsule_id: None,
             web: false,
+            danger_full_access: false,
             text: false,
             detach: true,
             socket: Some(PathBuf::from("/tmp/spewer.sock")),
@@ -156,6 +157,22 @@ fn parses_ollama_commands() -> Result<(), Box<dyn std::error::Error>> {
     );
     assert_eq!(
         parse(args(&[
+            "capsule",
+            "add",
+            "play-codex",
+            "--engine",
+            "codex-app-server",
+            "--model",
+            "gpt-5.6-luna",
+        ]))?,
+        CliCommand::CapsuleAdd {
+            capsule_id: "play-codex".to_owned(),
+            engine: "codex-app-server".to_owned(),
+            model: "gpt-5.6-luna".to_owned(),
+        }
+    );
+    assert_eq!(
+        parse(args(&[
             "ask",
             "What is two plus two?",
             "--capsule",
@@ -166,6 +183,7 @@ fn parses_ollama_commands() -> Result<(), Box<dyn std::error::Error>> {
             workspace: None,
             capsule_id: Some("qwen3-local".to_owned()),
             web: false,
+            danger_full_access: false,
             text: true,
             detach: false,
             socket: None,
@@ -183,11 +201,44 @@ fn parses_ollama_commands() -> Result<(), Box<dyn std::error::Error>> {
             workspace: None,
             capsule_id: None,
             web: true,
+            danger_full_access: false,
             text: false,
             detach: false,
             socket: None,
         }
     );
+    Ok(())
+}
+
+#[test]
+fn parses_explicit_unsandboxed_ask() -> Result<(), Box<dyn std::error::Error>> {
+    assert_eq!(
+        parse(args(&[
+            "ask",
+            "Run the stateful skill",
+            "--capsule",
+            "play-codex",
+            "--danger-full-access",
+            "--detach",
+        ]))?,
+        CliCommand::Ask {
+            question: "Run the stateful skill".to_owned(),
+            workspace: None,
+            capsule_id: Some("play-codex".to_owned()),
+            web: false,
+            danger_full_access: true,
+            text: false,
+            detach: true,
+            socket: None,
+        }
+    );
+    let CliCommand::Ask {
+        danger_full_access, ..
+    } = parse(args(&["ask", "Run it", "--no-sandbox"]))?
+    else {
+        return Err("--no-sandbox did not parse as ask".into());
+    };
+    assert!(danger_full_access);
     Ok(())
 }
 
@@ -200,6 +251,13 @@ fn parses_durable_queries() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(
         parse(args(&["tail", "task-one", "--after", "12"]))?,
         CliCommand::Tail {
+            task_id: "task-one".to_owned(),
+            after: 12
+        }
+    );
+    assert_eq!(
+        parse(args(&["watch", "task-one", "--after", "12"]))?,
+        CliCommand::Watch {
             task_id: "task-one".to_owned(),
             after: 12
         }
@@ -232,6 +290,30 @@ fn parses_durable_queries() -> Result<(), Box<dyn std::error::Error>> {
             task_id: "task-one".to_owned(),
             reason: "parent stopped".to_owned(),
             socket: None,
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn parses_one_typed_input_response() -> Result<(), Box<dyn std::error::Error>> {
+    assert_eq!(
+        parse(args(&[
+            "respond",
+            "tsk_one",
+            "7",
+            "--response",
+            r#"{"answers":{"dates":{"answers":["August 1–15"]}}}"#,
+            "--socket",
+            "/tmp/spewer.sock",
+        ]))?,
+        CliCommand::Respond {
+            task_id: "tsk_one".to_owned(),
+            request_id: serde_json::json!(7),
+            response: serde_json::json!({
+                "answers":{"dates":{"answers":["August 1–15"]}}
+            }),
+            socket: Some(PathBuf::from("/tmp/spewer.sock")),
         }
     );
     Ok(())

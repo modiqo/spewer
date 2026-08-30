@@ -55,7 +55,7 @@ impl LocalConfig {
             },
             budgets: Budgets {
                 wall_seconds: 180,
-                tokens: 100_000,
+                tokens: 1_000_000,
                 tool_calls: 20,
                 retries: 0,
                 cost_usd: 1.0,

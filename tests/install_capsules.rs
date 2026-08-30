@@ -57,6 +57,7 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
     assert_install_report(&installed, true, true, "generic")?;
 
     assert_capsule_guidance(&home, &fake)?;
+    add_codex_capsule(&home, &fake)?;
 
     let before = capabilities(&home, &fake)?;
     let before_revision = before
@@ -66,21 +67,13 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
         .to_owned();
     assert_eq!(
         before
-            .pointer("/capsules/0/kind")
+            .pointer("/capsules/1/kind")
             .and_then(serde_json::Value::as_str),
         Some("generic")
     );
     assert_default_runtime_capabilities(&before);
 
-    let skill = root.join("skill/SKILL.md");
-    let skill_parent = skill.parent().ok_or("skill parent missing")?;
-    std::fs::create_dir_all(skill_parent)?;
-    std::fs::write(
-        &skill,
-        "---\nname: review\ndescription: Review bounded changes\nversion: 1\n---\nReview.\n",
-    )?;
-    let bound = run_cli(&home, &fake, &["capsule", "bind", "default", path(&skill)?])?;
-    ensure_success(&bound, "capsule bind")?;
+    bind_fixture_skill(&root, &home, &fake)?;
 
     let after = capabilities(&home, &fake)?;
     assert_ne!(
@@ -93,15 +86,21 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
         after
             .pointer("/capsules/0/kind")
             .and_then(serde_json::Value::as_str),
+        Some("generic")
+    );
+    assert_eq!(
+        after
+            .pointer("/capsules/1/kind")
+            .and_then(serde_json::Value::as_str),
         Some("specialized")
     );
     assert_eq!(
         after
-            .pointer("/capsules/0/skill/name")
+            .pointer("/capsules/1/skill/name")
             .and_then(serde_json::Value::as_str),
         Some("review")
     );
-    assert!(after.pointer("/capsules/0/skill/source").is_none());
+    assert!(after.pointer("/capsules/1/skill/source").is_none());
     dispatch_specialized(&home, &fake, &workspace, &after)?;
 
     let repeated = run_cli(
@@ -116,14 +115,14 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
     )?;
     ensure_success(&repeated, "repeated install")?;
     let repeated: serde_json::Value = serde_json::from_slice(&repeated.stdout)?;
-    assert_install_report(&repeated, false, false, "specialized")?;
+    assert_install_report(&repeated, false, false, "generic")?;
 
-    let unbound = run_cli(&home, &fake, &["capsule", "unbind", "default"])?;
+    let unbound = run_cli(&home, &fake, &["capsule", "unbind", "play-codex"])?;
     ensure_success(&unbound, "capsule unbind")?;
     let restored = capabilities(&home, &fake)?;
     assert_eq!(
         restored
-            .pointer("/capsules/0/kind")
+            .pointer("/capsules/1/kind")
             .and_then(serde_json::Value::as_str),
         Some("generic")
     );
@@ -138,6 +137,52 @@ fn install_and_live_capsule_binding_need_no_restart() -> Result<(), Box<dyn std:
     ensure_success(&stopped, "stop")?;
     wait_removed(&home.join("spewer.sock"))?;
     std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+fn add_codex_capsule(home: &Path, fake: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let added = run_cli(
+        home,
+        fake,
+        &[
+            "capsule",
+            "add",
+            "play-codex",
+            "--engine",
+            "codex-app-server",
+            "--model",
+            "gpt-5.6-luna",
+        ],
+    )?;
+    ensure_success(&added, "capsule add codex")?;
+    let added: serde_json::Value = serde_json::from_slice(&added.stdout)?;
+    assert_eq!(
+        added
+            .pointer("/engine/kind")
+            .and_then(serde_json::Value::as_str),
+        Some("codex-app-server")
+    );
+    Ok(())
+}
+
+fn bind_fixture_skill(
+    root: &Path,
+    home: &Path,
+    fake: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let skill = root.join("skill/SKILL.md");
+    let skill_parent = skill.parent().ok_or("skill parent missing")?;
+    std::fs::create_dir_all(skill_parent)?;
+    std::fs::write(
+        &skill,
+        "---\nname: review\ndescription: Review bounded changes\nversion: 1\n---\nReview.\n",
+    )?;
+    let bound = run_cli(
+        home,
+        fake,
+        &["capsule", "bind", "play-codex", path(&skill)?],
+    )?;
+    ensure_success(&bound, "capsule bind")?;
     Ok(())
 }
 
@@ -157,6 +202,18 @@ fn assert_capsule_guidance(home: &Path, fake: &Path) -> Result<(), Box<dyn std::
             .pointer("/ask/output/default")
             .and_then(serde_json::Value::as_str),
         Some("answer text plus telemetry")
+    );
+    assert_eq!(
+        shown
+            .pointer("/ask/request_authority/--danger-full-access/available")
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        shown
+            .pointer("/ask/danger_example/3")
+            .and_then(serde_json::Value::as_str),
+        Some("--danger-full-access")
     );
     let selected = run_cli(home, fake, &["capsule", "default", "default"])?;
     ensure_success(&selected, "capsule default")
@@ -185,7 +242,7 @@ fn dispatch_specialized(
     capabilities: &serde_json::Value,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let capsule = capabilities
-        .pointer("/capsules/0")
+        .pointer("/capsules/1")
         .ok_or("specialized capsule missing")?;
     let task = serde_json::json!({
         "protocol_version": "0.1",
@@ -220,7 +277,7 @@ fn dispatch_specialized(
     let delegated = run_cli(
         home,
         fake,
-        &["delegate", path(&task_path)?, "--capsule", "default"],
+        &["delegate", path(&task_path)?, "--capsule", "play-codex"],
     )?;
     ensure_success(&delegated, "capsule delegate")?;
     let delegation: serde_json::Value = serde_json::from_slice(&delegated.stdout)?;
@@ -248,6 +305,7 @@ fn dispatch_specialized(
         capsule.get("revision").and_then(serde_json::Value::as_str)
     );
     let turn = std::fs::read_to_string(home.join("turn.json"))?;
+    assert!(turn.contains("explicitly invoked the bound skill 'review'"));
     assert!(turn.contains("Review."));
     Ok(())
 }

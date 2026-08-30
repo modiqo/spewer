@@ -1,7 +1,9 @@
 use super::{Supervisor, SupervisorConfig, TurnWorker};
 use crate::error::{Error, ErrorKind, Result};
 use crate::protocol::TaskRequest;
-use crate::store::Database;
+use crate::store::{Database, EventInput};
+use crate::util::now;
+use serde_json::json;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -12,6 +14,71 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 struct TestWorker {
     delay: Duration,
     fail: bool,
+}
+
+#[derive(Debug)]
+struct InputWorker;
+
+impl TurnWorker for InputWorker {
+    fn run(
+        &self,
+        _request: TaskRequest,
+        task_id: String,
+        _lease_id: String,
+        database: Arc<Database>,
+        mut input: tokio::sync::mpsc::Receiver<crate::protocol::TaskInputResponse>,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        Box::pin(async move {
+            let projection = database
+                .get(task_id.clone())
+                .await?
+                .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing input task"))?;
+            database
+                .append(EventInput {
+                    task_id: task_id.clone(),
+                    attempt: projection.attempt,
+                    kind: "input.required".to_owned(),
+                    data: json!({
+                        "request_id": 7,
+                        "method": "item/tool/requestUserInput",
+                        "request": {
+                            "questions":[{
+                                "id":"dates",
+                                "question":"What date range?",
+                                "isSecret":false
+                            }]
+                        }
+                    }),
+                    source: None,
+                    source_key: None,
+                    observed_at: now()?,
+                })
+                .await?;
+            let response = input.recv().await.ok_or_else(|| {
+                Error::new(ErrorKind::ChannelClosed, "input response channel closed")
+            })?;
+            assert_eq!(
+                response.response.pointer("/answers/dates/answers/0"),
+                Some(&json!("August 1–15"))
+            );
+            let projection = database
+                .get(task_id.clone())
+                .await?
+                .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing resumed task"))?;
+            database
+                .append(EventInput {
+                    task_id,
+                    attempt: projection.attempt,
+                    kind: "turn.completed".to_owned(),
+                    data: json!({"status":"completed"}),
+                    source: None,
+                    source_key: None,
+                    observed_at: now()?,
+                })
+                .await?;
+            Ok(())
+        })
+    }
 }
 
 impl TestWorker {
@@ -27,6 +94,7 @@ impl TurnWorker for TestWorker {
         _task_id: String,
         _lease_id: String,
         _database: Arc<Database>,
+        _input: tokio::sync::mpsc::Receiver<crate::protocol::TaskInputResponse>,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
         let delay = self.delay;
         let fail = self.fail;
@@ -197,6 +265,53 @@ async fn running_cancellation_aborts_worker_and_is_idempotent() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn input_response_continues_the_same_task() -> Result<()> {
+    let path = temporary("input-response")?.with_extension("sqlite");
+    let database = Database::open(path.clone()).await?;
+    let supervisor =
+        Supervisor::start_with(database, Arc::new(InputWorker), SupervisorConfig::default())
+            .await?;
+    let handle = supervisor.handle();
+    let task = handle.submit(request("input-response")?).await?;
+    wait_for_status(
+        &handle,
+        &task.task_id,
+        crate::protocol::TaskStatus::InputRequired,
+    )
+    .await?;
+    let resumed = handle
+        .respond(
+            task.task_id.clone(),
+            crate::protocol::TaskInputResponse {
+                request_id: json!(7),
+                response: json!({
+                    "answers":{"dates":{"answers":["August 1–15"]}}
+                }),
+            },
+        )
+        .await?;
+    assert_eq!(resumed.task_id, task.task_id);
+    assert_eq!(resumed.status, crate::protocol::TaskStatus::Running);
+    wait_for_finished(&handle, 1).await?;
+    let result = handle.result(task.task_id.clone()).await?;
+    assert_eq!(result.projection.task_id, task.task_id);
+    assert_eq!(
+        result.projection.status,
+        crate::protocol::TaskStatus::Completed
+    );
+    let events = supervisor
+        .handle()
+        .observe(result.projection.task_id.clone(), 0)
+        .await?
+        .events;
+    assert!(events.iter().any(|event| event.kind == "input.required"));
+    assert!(events.iter().any(|event| event.kind == "input.resolved"));
+    supervisor.shutdown().await?;
+    remove_database_files(&path)?;
+    Ok(())
+}
+
 async fn wait_for_load(
     handle: &super::SupervisorHandle,
     active: usize,
@@ -223,6 +338,23 @@ async fn wait_for_finished(handle: &super::SupervisorHandle, count: u64) -> Resu
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     Err(Error::new(ErrorKind::Timeout, "workers did not finish"))
+}
+
+async fn wait_for_status(
+    handle: &super::SupervisorHandle,
+    task_id: &str,
+    status: crate::protocol::TaskStatus,
+) -> Result<()> {
+    for _attempt in 0..200 {
+        if handle.result(task_id.to_owned()).await?.projection.status == status {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    Err(Error::new(
+        ErrorKind::Timeout,
+        format!("task did not reach {status:?}"),
+    ))
 }
 
 fn request(key: &str) -> Result<TaskRequest> {

@@ -1,4 +1,4 @@
-# Frontier integration exposes three task actions
+# Frontier integration keeps three lifecycle actions and one conditional response
 
 Status: **Accepted**
 
@@ -6,7 +6,7 @@ CP17 packages the existing service lifecycle for frontier harnesses. It does not
 
 ## The reusable client hides transport mechanics
 
-The harness client exposes discovery, delegation, checking, and cancellation. Delegation performs live capability lookup and binds the chosen capsule revision before submission.
+The harness client exposes discovery, delegation, checking, typed input response, and cancellation. Delegation performs live capability lookup and binds the chosen capsule revision before submission.
 
 Each capsule card exposes `network` and `tools`. The client rejects requested network, write, or
 allowlisted-command authority when the selected card does not advertise it.
@@ -15,12 +15,22 @@ Checking combines cursor-based observation with non-consuming result retrieval. 
 
 The client does not own a harness continuation. Each host still stores its private continuation and applies a receipt exactly once.
 
-## Models see three actions
+## Models see three lifecycle actions and one conditional response
 
 The model-facing task actions are `delegate`, `check`, and `cancel`. Capability lookup remains a
 read-only routing step before delegation.
 
 `spewer delegate` accepts a complete task request and replaces its capsule and engine fields from current capabilities. `spewer check` returns observation and result in one JSON object. The existing cancel command remains idempotent.
+
+`respond` appears only after `check` returns `input_required`. The harness asks the user the exact
+question, then supplies the pending request ID and a method-shaped JSON response. Spewer records
+`input.resolved` before forwarding the response into the same App Server turn. The harness keeps
+checking the same task ID.
+
+Credential prompts are not response boundaries: Spewer rejects them. Authentication stays with
+the provider or credential-owning harness. A delegated skill may open the provider's OAuth browser
+after approval, but credentials and tokens never cross `respond`. A task that receives no human
+response within 30 minutes becomes stalled, escalates, and releases its worker.
 
 ## The reference skill teaches the ownership boundary
 

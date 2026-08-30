@@ -33,6 +33,7 @@ fn executable_help_teaches_the_global_and_command_routes() -> Result<(), Box<dyn
         "capabilities",
         "observe",
         "result",
+        "respond",
         "cancel",
     ] {
         let output = Command::new(binary).args([command, "--help"]).output()?;

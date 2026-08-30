@@ -162,11 +162,74 @@ fn normalize_plan(params: &Value) -> Vec<Value> {
 }
 
 fn item_metadata(item: Option<&Value>) -> Value {
-    json!({
-        "id": item.and_then(|value| value.get("id")),
-        "type": item.and_then(|value| value.get("type")),
-        "status": item.and_then(|value| value.get("status"))
+    let Some(item) = item else {
+        return Value::Object(serde_json::Map::new());
+    };
+    let mut metadata = serde_json::Map::new();
+    copy_string(item, &mut metadata, "id", "id");
+    copy_string(item, &mut metadata, "type", "type");
+    copy_string(item, &mut metadata, "status", "status");
+    copy_string(item, &mut metadata, "pluginId", "plugin_id");
+    copy_string(item, &mut metadata, "scriptPath", "script_path");
+    copy_string(item, &mut metadata, "server", "server");
+    copy_string(item, &mut metadata, "namespace", "namespace");
+    copy_string(item, &mut metadata, "tool", "tool");
+    if item.get("type").and_then(Value::as_str) == Some("commandExecution")
+        && let Some(name) = command_name(item)
+    {
+        metadata.insert("command_name".to_owned(), Value::String(name));
+    }
+    Value::Object(metadata)
+}
+
+fn command_name(item: &Value) -> Option<String> {
+    let parsed = item
+        .get("commandActions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|action| action.get("command").and_then(Value::as_str))
+        .filter_map(safe_command_name)
+        .find(|name| !is_shell_wrapper(name));
+    parsed.or_else(|| {
+        item.get("command")
+            .and_then(Value::as_str)
+            .and_then(safe_command_name)
     })
+}
+
+fn is_shell_wrapper(name: &str) -> bool {
+    matches!(
+        name,
+        "sh" | "bash" | "zsh" | "fish" | "env" | "command" | "timeout"
+    )
+}
+
+fn copy_string(
+    source: &Value,
+    target: &mut serde_json::Map<String, Value>,
+    source_name: &str,
+    target_name: &str,
+) {
+    if let Some(value) = source.get(source_name).and_then(Value::as_str) {
+        target.insert(target_name.to_owned(), Value::String(value.to_owned()));
+    }
+}
+
+fn safe_command_name(command: &str) -> Option<String> {
+    let token = command.split_ascii_whitespace().next()?;
+    if token.is_empty()
+        || token.len() > 128
+        || !token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
+    {
+        return None;
+    }
+    std::path::Path::new(token)
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(str::to_owned)
 }
 
 fn normalize_usage(params: &Value) -> Value {
@@ -266,6 +329,38 @@ mod tests {
         let encoded = serde_json::to_string(&event.data)?;
         assert!(!encoded.contains("unique-secret-body"));
         assert_eq!(event.data.pointer("/item/id"), Some(&json!("item-one")));
+        Ok(())
+    }
+
+    #[test]
+    fn command_items_keep_only_safe_activity_labels() -> Result<(), Box<dyn std::error::Error>> {
+        let mut normalizer = Normalizer::default();
+        let event = normalizer.normalize(CodexMessage::Notification {
+            method: "item/started".to_owned(),
+            params: json!({
+                "item": {
+                    "id":"item-one",
+                    "type":"commandExecution",
+                    "status":"inProgress",
+                    "command":"/bin/zsh -lc unique-secret-body",
+                    "commandActions":[{
+                        "type":"unknown",
+                        "command":"/opt/play/bin/play-machine --token unique-secret-body"
+                    }],
+                    "aggregatedOutput":"another-secret",
+                    "pluginId":"play",
+                    "scriptPath":"scripts/cheat-sheet"
+                }
+            }),
+        })?;
+        assert_eq!(
+            event.data.pointer("/item/command_name"),
+            Some(&json!("play-machine"))
+        );
+        assert_eq!(event.data.pointer("/item/plugin_id"), Some(&json!("play")));
+        let encoded = serde_json::to_string(&event.data)?;
+        assert!(!encoded.contains("unique-secret-body"));
+        assert!(!encoded.contains("another-secret"));
         Ok(())
     }
 }

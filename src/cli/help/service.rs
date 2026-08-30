@@ -64,6 +64,33 @@ EXAMPLE
   spewer result tsk_example
 ";
 
+pub(super) const RESPOND: &str = r#"spewer respond - continue one task after a human-input boundary
+
+USAGE
+  spewer respond <task-id> <request-id> --response '<json>' [--socket <path>]
+
+WHEN
+  Use after observe reports input_required and returns projection.pending_input.
+  Never place passwords, API keys, access tokens, or other credentials in the response.
+  Spewer escalates the task when no response arrives within 30 minutes.
+
+STATE
+  input_required -> running on the same task, thread, and worker turn
+
+NEXT
+  Continue observing from the saved cursor. Retrieve the result after the task becomes terminal.
+  Complete provider OAuth in its browser, then answer only a nonsecret verification prompt.
+  After an input timeout, inspect the escalated receipt before starting another task.
+
+OUTPUT
+  One JSON projection after Spewer durably records input.resolved.
+  A changed request id, secret prompt, incomplete answer, or authority expansion fails closed.
+
+EXAMPLE
+  spewer respond tsk_example 7 \
+    --response '{"answers":{"dates":{"answers":["August 1–15"]}}}'
+"#;
+
 pub(super) const CANCEL: &str = r#"spewer cancel - durably stop one delegated task
 
 USAGE
@@ -108,4 +135,50 @@ OUTPUT
 
 EXAMPLE
   spewer status tsk_example
+";
+
+pub(super) const TAIL: &str = r"spewer tail - read committed events after a durable cursor
+
+USAGE
+  spewer tail <task-id> [--after <seq>]
+
+WHEN
+  Use after status or a previous tail call. Save the highest processed seq as the next cursor.
+
+STATE
+  any task state -> same task state
+  This read changes no state and may return no lines.
+
+NEXT
+  Apply events in sequence order, save the last seq, then call tail again with --after.
+  Use 'spewer watch <task-id> --after <seq>' for a filtered continuous trace.
+
+OUTPUT
+  Zero or more JSON event lines with gap-free per-task sequence numbers.
+
+EXAMPLE
+  spewer tail tsk_example --after 42
+";
+
+pub(super) const WATCH: &str = r"spewer watch - follow safe model and tool activity
+
+USAGE
+  spewer watch <task-id> [--after <seq>]
+
+WHEN
+  Use after a detached ask to debug capsule selection and worker activity.
+
+STATE
+  stored task -> replay later activity -> terminal state
+  This read follows durable events and changes no task state.
+
+NEXT
+  Inspect the terminal status, or use tail for the complete machine-readable record.
+
+OUTPUT
+  Human-readable lines for capsule, skill, engine, model, safe tools, and heartbeats.
+  Hidden reasoning, raw commands, arguments, tool output, and secrets are never printed.
+
+EXAMPLE
+  spewer watch tsk_example
 ";

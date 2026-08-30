@@ -87,9 +87,12 @@ The CLI is an inspection and integration surface. A production Play host should 
 
 ## Model-visible tools remain smaller
 
-Models should see `spewer_delegate`, `spewer_check`, and `spewer_cancel`. The harness runs cursor replay, inbox storage, claiming, and acknowledgement outside model context.
+Models ordinarily see `spewer_delegate`, `spewer_check`, and `spewer_cancel`. A typed `respond`
+action appears only after `check` reports `input_required`. The harness runs cursor replay, inbox
+storage, claiming, and acknowledgement outside model context.
 
-This follows Rippling's central interface lesson: agents perform better with a small capability surface and exact instructions. Spewer does not need an arbitrary code tool for eight lifecycle operations.
+This keeps the capability surface small and exact. Spewer does not need an arbitrary code tool for
+its transport operations.
 
 ## Conformance tests cover adapter crashes
 

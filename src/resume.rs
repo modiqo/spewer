@@ -2,7 +2,7 @@ use crate::codex::{CodexClient, CodexConfig, turn_params};
 use crate::error::{Error, ErrorKind, Result};
 use crate::journal::TaskJournal;
 use crate::protocol::{PROTOCOL_VERSION, TaskHandle};
-use crate::runner::{RunResult, drive, finish, finish_terminal};
+use crate::runner::{DriveOptions, RunResult, drive, finish, finish_terminal};
 use crate::store::Database;
 use crate::util::now;
 use crate::workspace::Workspace;
@@ -72,7 +72,10 @@ pub(crate) async fn run(
         &mut task,
         &thread_id,
         &turn_id,
-        deadline,
+        DriveOptions {
+            deadline,
+            input: None,
+        },
     )
     .await;
     let close = client.close().await;
@@ -129,11 +132,7 @@ async fn restore_client(
             json!({"threadId": thread_id, "includeTurns": true}),
         )
         .await?;
-    let sandbox = if request.permissions.filesystem == "read-only" {
-        "read-only"
-    } else {
-        "workspace-write"
-    };
+    let sandbox = crate::codex::sandbox_name(request);
     client
         .request(
             "thread/resume",

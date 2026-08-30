@@ -364,7 +364,6 @@ CP13 is complete.
 
 **Exit gate:** Crash, restart, adapter conformance, quality, and local end-to-end evidence pass in one CP14 packet.
 
-
 ## CP15 makes a useful worker one command away
 
 **Objective:** Install one ready local service and let harnesses discover whether its default capsule is generic or skill-specialized.
@@ -390,7 +389,6 @@ CP13 is complete.
 - Repeating installation does not replace an existing local configuration or start a second service.
 
 **Exit gate:** Unit, CLI, capability lookup, private-file, quality, and local end-to-end evidence pass in one CP15 packet.
-
 
 ## CP16 binds execution to one capsule revision
 
@@ -418,7 +416,6 @@ CP13 is complete.
 
 **Exit gate:** Protocol, stale-binding, prompt, receipt, recovery, compatibility, and end-to-end tests pass in one CP16 packet.
 
-
 ## CP17 gives frontier harnesses one small integration surface
 
 **Objective:** Let a frontier harness discover and delegate to Spewer without implementing its control protocol from scratch.
@@ -444,7 +441,6 @@ CP13 is complete.
 - A harness can complete discovery through receipt retrieval without parsing socket frames itself.
 
 **Exit gate:** Client, CLI, skill validation, installation, conformance, help, quality, and end-to-end tests pass in one CP17 packet.
-
 
 ## CP18 adds a production local Qwen3 worker
 
@@ -488,13 +484,15 @@ CP20 is complete. Its evidence is under `artifacts/checkpoints/CP20/README.md`.
 
 ## CP21 resolves Ollama's implicit latest tag
 
-**Objective:** Accept Ollama's untagged model shorthand without storing an ambiguous capsule model.
+**Objective and gate:** Resolve untagged Ollama names to installed tags. CP21 is complete under `artifacts/checkpoints/CP21/README.md`.
 
-**Acceptance:**
-
-- `mistral` resolves to an installed `mistral:latest`.
-- New capsules store the canonical installed model name.
-- Explicit tags still require an exact installed match.
-- Missing models retain an actionable error.
-
-**Exit gate:** Resolution, capsule creation, live discovery, compatibility, and quality evidence pass. CP21 is complete under `artifacts/checkpoints/CP21/README.md`.
+## CP22 specializes a named Codex capsule
+**Objective and gate:** Bind and explicitly activate an installed skill in a named worker while preserving the generic default. CP22 is complete under `artifacts/checkpoints/CP22/README.md`.
+## CP23 makes model activity observable across engines
+**Objective and gate:** Provide a durable, secret-safe activity trace across Codex and Ollama. CP23 is complete under `artifacts/checkpoints/CP23/README.md`.
+## CP24 supports explicit unsandboxed Codex tasks
+**Objective and gate:** Let one trusted Codex task disable its sandbox without weakening defaults. CP24 is complete under `artifacts/checkpoints/CP24/README.md`.
+## CP25 continues one task through typed human input
+**Objective:** Relay nonsecret questions and approvals through the frontier harness into the same App Server turn.
+**Acceptance:** `check` exposes `input_required`; `respond` validates and journals the exact request, rejects credentials, resumes the same task, and escalates after a 30-minute wait.
+**Exit gate:** Protocol, service, runner, CLI, skill, documentation, timeout, and end-to-end tests pass under `artifacts/checkpoints/CP25/README.md`.

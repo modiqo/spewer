@@ -100,7 +100,7 @@ fn parse_capsule_add(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     let engine = engine.ok_or_else(|| {
         Error::new(
             ErrorKind::InvalidInput,
-            "capsule add requires --engine ollama",
+            "capsule add requires --engine codex-app-server or --engine ollama",
         )
     })?;
     let model =

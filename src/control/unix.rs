@@ -8,7 +8,8 @@ use super::{
 };
 use crate::codex::CodexConfig;
 use crate::error::{Error, ErrorKind, Result};
-use crate::protocol::{TaskHandle, TaskRequest};
+use crate::protocol::{TaskHandle, TaskInputResponse, TaskRequest};
+use crate::reducer::Projection;
 use crate::store::Database;
 use crate::store::{CancelOutcome, Observation, TaskResult};
 use crate::supervisor::{Supervisor, SupervisorConfig, SupervisorLoad};
@@ -134,6 +135,19 @@ pub async fn result(path: PathBuf, task_id: String) -> Result<TaskResult> {
     }
 }
 
+/// Resolves one exact human-input boundary for an active task.
+pub async fn respond(
+    path: PathBuf,
+    task_id: String,
+    response: TaskInputResponse,
+) -> Result<Projection> {
+    match send(path, ControlRequest::Respond { task_id, response }).await? {
+        ControlResponse::InputAccepted { projection } => Ok(projection),
+        ControlResponse::Error { kind, message } => Err(Error::new(kind, message)),
+        _ => Err(unexpected_response()),
+    }
+}
+
 /// Cancels one queued or active task through its scheduler owner.
 pub async fn cancel(path: PathBuf, task_id: String, reason: String) -> Result<CancelOutcome> {
     match send(path, ControlRequest::Cancel { task_id, reason }).await? {
@@ -231,6 +245,12 @@ async fn execute(
             Ok(result) => (ControlResponse::Result { result }, false),
             Err(error) => (error_response(&error), false),
         },
+        ControlRequest::Respond { task_id, response } => {
+            match handle.respond(task_id, response).await {
+                Ok(projection) => (ControlResponse::InputAccepted { projection }, false),
+                Err(error) => (error_response(&error), false),
+            }
+        }
         ControlRequest::Cancel { task_id, reason } => match handle.cancel(task_id, reason).await {
             Ok(cancellation) => (ControlResponse::Cancellation { cancellation }, false),
             Err(error) => (error_response(&error), false),

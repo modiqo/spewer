@@ -27,6 +27,7 @@ EXAMPLE
 pub(super) const CAPSULE: &str = r"spewer capsule - add, discover, or specialize a worker
 
 USAGE
+  spewer capsule add <capsule-id> --engine codex-app-server --model <name>
   spewer capsule add <capsule-id> --engine ollama --model <name>
   spewer capsule list
   spewer capsule show [<capsule-id>]
@@ -35,10 +36,10 @@ USAGE
   spewer capsule unbind <capsule-id>
 
 WHEN
-  Add an installed Ollama model once. Show its ask flags. Select a default or bind a skill.
+  Add a Codex or installed Ollama model once. Show its ask flags. Select a default or bind a skill.
 
 STATE
-  add: installed Ollama model -> generic capsule
+  add: ready engine and model -> generic capsule
   show: capsule -> supported ask flags and examples
   default: installed capsule -> default for plain ask
   bind: generic capsule -> specialized capsule
@@ -52,6 +53,8 @@ OUTPUT
   JSON describes the catalog, selected capsule, ask guidance, or changed manifest.
 
 EXAMPLE
+  spewer capsule add play-codex --engine codex-app-server --model gpt-5.6-luna
+  spewer capsule bind play-codex ~/.codex/skills/play
   spewer capsule add qwen3-local --engine ollama --model qwen3:30b-a3b
   spewer capsule default qwen3-local
   spewer capsule show

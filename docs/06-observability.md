@@ -22,15 +22,30 @@ Every task projection exposes these fields:
 
 Spewer reports `completed_steps / total_steps` only for an explicit plan. It otherwise omits percentage completion.
 
-## Heartbeats detect silence without claiming failure
+## Watch exposes activity without exposing reasoning
 
-The supervisor emits `task.heartbeat` while the engine remains alive but produces no source event. The heartbeat includes process health and silence duration.
+`spewer watch <task-id>` follows the durable journal and identifies the accepted capsule, skill,
+engine, and model. It renders safe Codex tool labels and filters high-volume deltas. It also filters
+standard error, raw commands, arguments, tool output, and unknown provider notifications.
 
-A silence threshold changes the projection to `stalled`. A separate policy decides whether to interrupt, retry, or escalate.
+The Ollama runner emits `task.heartbeat` once per second while a complete local response is still
+pending. The heartbeat reports `activity: model_active` and elapsed time. It proves liveness but
+does not claim percentage progress or reveal model reasoning. Codex normally supplies structural
+item events instead, including reasoning start and completion boundaries without their contents.
+
+Spewer does not turn model-heartbeat silence into `stalled` automatically. That policy remains
+separate so liveness evidence cannot silently become retry or cancellation authority. The one
+explicit stall boundary is a Codex task waiting 30 minutes for typed human input; it records
+`task.stalled`, escalates without guessing, and releases the worker.
 
 ## Usage preserves provider facts and derived cost
 
 Spewer stores provider-reported token categories without merging them. Missing categories remain `null`, not zero.
+
+The Codex token budget uses cumulative provider usage across a turn. Every model continuation after
+a tool call can add the repeated prompt context again. Provider-reported cached input remains a
+separate counter. The 1,000,000-token ask default bounds cumulative work; it does not enlarge the
+model context window.
 
 Cost uses a versioned price configuration with effective dates. Every derived cost record names its price source and configuration hash.
 

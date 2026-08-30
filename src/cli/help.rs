@@ -6,7 +6,7 @@ mod setup;
 
 use super::parse::HelpTopic;
 use harness::{CHECK, DELEGATE};
-use service::{CANCEL, CAPABILITIES, OBSERVE, RESULT, STATUS};
+use service::{CANCEL, CAPABILITIES, OBSERVE, RESPOND, RESULT, STATUS, TAIL, WATCH};
 use setup::{CAPSULE, INIT, INSTALL};
 
 /// Renders global help or one command reference.
@@ -28,9 +28,11 @@ pub(super) fn render(topic: Option<HelpTopic>) -> String {
         Some(HelpTopic::Capabilities) => CAPABILITIES,
         Some(HelpTopic::Observe) => OBSERVE,
         Some(HelpTopic::Result) => RESULT,
+        Some(HelpTopic::Respond) => RESPOND,
         Some(HelpTopic::Cancel) => CANCEL,
         Some(HelpTopic::Status) => STATUS,
         Some(HelpTopic::Tail) => TAIL,
+        Some(HelpTopic::Watch) => WATCH,
         Some(HelpTopic::Rebuild) => REBUILD,
         Some(HelpTopic::Recover) => RECOVER,
         Some(HelpTopic::Resume) => RESUME,
@@ -60,7 +62,9 @@ AGENT ROUTES
   Frontier tool:   delegate -> check -> accept receipt -> ack
   One attached:    doctor -> run -> consume receipt -> ack callback
   Observe service: observe --after <event-cursor> -> result
+  Human boundary:  observe input_required -> respond -> observe
   After restart:   recover -> status or tail -> resume
+  Debug a worker:  ask --detach -> watch
   Poll delivery:   outbox -> persist receipt once -> ack
   Repair state:    rebuild -> status
 
@@ -95,10 +99,12 @@ COMMANDS
   capabilities  Read the service operations, limits, and engine kinds.
   observe  Read one projection and replay events after a cursor.
   result   Read one stable terminal message without consuming it.
+  respond  Answer one exact human-input request and continue the task.
   cancel   Stop one queued or active task and commit its receipt.
   run      Execute one task from JSON and write JSONL progress.
   status   Read the latest durable task projection. Changes no state.
   tail     Read committed events after a cursor. Changes no state.
+  watch    Follow a safe human-readable activity trace until completion.
   recover  List nonterminal tasks after interruption. Changes no state.
   resume   Reconcile a retained task, then continue from a safe checkpoint.
   outbox   Read callbacks still awaiting one consumer's acknowledgement.
@@ -107,7 +113,7 @@ COMMANDS
 
 OUTPUT CONTRACT
   Commands write data to stdout and diagnostics to stderr.
-  run, tail, and outbox write JSON Lines. Other data commands write one JSON value.
+  run, tail, and outbox write JSON Lines. watch writes a human-readable trace.
   Store the task_id, event cursor, receipt_id, and message_id before advancing a parent.
 
 LEARN THE NEXT STEP
@@ -118,6 +124,7 @@ const ASK: &str = r#"spewer ask - infer and run one bounded question task
 
 USAGE
   spewer ask "<question>" [--workspace <path>] [--capsule <id>] [--web] [--json | --text]
+  spewer ask "<question>" --capsule <id> --danger-full-access [--detach]
   spewer ask "<question>" --detach [--capsule <id>] [--web] [--socket <path>]
 
 WHEN
@@ -129,20 +136,24 @@ STATE
 
 NEXT
   Attached mode prints the answer. Use '--json' for a structured result and receipt.
-  Detached mode returns argument arrays for observe, result, and cancel.
+  Detached mode returns argument arrays for watch, observe, result, and cancel.
   '--web' grants network access and requires a capsule that advertises web_search.
+  '--danger-full-access' disables the Codex sandbox and grants filesystem plus network authority.
+  '--no-sandbox' is an alias. Use either only for a worker whose runtime requires host state.
   Omit '--capsule' to use the configured default shown by 'spewer capsule show'.
 
 OUTPUT
   Attached mode writes the answer to stdout and telemetry to stderr.
   JSON mode writes one structured result to stdout and progress to stderr.
   Detached mode writes one JSON task handle without waiting for the selected worker.
+  The durable accepted request preserves the explicit unsandboxed authority.
 
 EXAMPLE
   spewer ask "What is 17 multiplied by 23?"
   spewer ask "Summarize this task" --capsule qwen3-local
   spewer ask "What changed in Rust this week?" --capsule qwen3-local --web
   spewer ask "Inspect the parser tests" --detach
+  spewer ask "Run the stateful skill" --capsule play-codex --danger-full-access --detach
 "#;
 
 const DOCTOR: &str = r"spewer doctor - verify one engine boundary
@@ -289,29 +300,6 @@ EXAMPLE
   spewer stop
 ";
 
-const TAIL: &str = r"spewer tail - read committed events after a durable cursor
-
-USAGE
-  spewer tail <task-id> [--after <seq>]
-
-WHEN
-  Use after status or a previous tail call. Save the highest processed seq as the next cursor.
-
-STATE
-  any task state -> same task state
-  This read changes no state and may return no lines.
-
-NEXT
-  Apply events in sequence order, save the last seq, then call tail again with --after.
-  Use 'spewer status <task-id>' when an event indicates a terminal or recovery boundary.
-
-OUTPUT
-  Zero or more JSON event lines with gap-free per-task sequence numbers.
-
-EXAMPLE
-  spewer tail tsk_example --after 42
-";
-
 const RECOVER: &str = r"spewer recover - find tasks that need restart reconciliation
 
 USAGE
@@ -445,9 +433,11 @@ mod tests {
             "run",
             "status",
             "tail",
+            "watch",
             "capabilities",
             "observe",
             "result",
+            "respond",
             "cancel",
             "recover",
             "resume",

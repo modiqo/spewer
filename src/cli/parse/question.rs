@@ -27,6 +27,7 @@ pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
     let mut workspace = None;
     let mut capsule_id = None;
     let mut web = false;
+    let mut danger_full_access = false;
     let mut text_requested = false;
     let mut json_requested = false;
     let mut detach = false;
@@ -39,6 +40,7 @@ pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
                 capsule_id = Some(value(parser)?.to_string_lossy().into_owned());
             }
             Long("web") => web = true,
+            Long("danger-full-access" | "no-sandbox") => danger_full_access = true,
             Long("json") => json_requested = true,
             Long("text") => text_requested = true,
             Long("detach") => detach = true,
@@ -77,6 +79,7 @@ pub(super) fn parse_ask(parser: &mut lexopt::Parser) -> Result<CliCommand> {
         workspace,
         capsule_id,
         web,
+        danger_full_access,
         text,
         detach,
         socket,

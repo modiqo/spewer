@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::Instant;
 
+use super::parse::CliCommand;
+
 pub(super) async fn initialize(workspace: Option<PathBuf>, overwrite: bool) -> Result<()> {
     let expected = if overwrite {
         tokio::task::spawn_blocking(crate::config::existing_digest).await??
@@ -42,15 +44,23 @@ pub(super) async fn initialize(workspace: Option<PathBuf>, overwrite: bool) -> R
     Ok(())
 }
 
-pub(super) async fn ask(
-    question: String,
-    workspace: Option<PathBuf>,
-    capsule_id: Option<String>,
-    web: bool,
-    text_output: bool,
-    detach: bool,
-    socket: Option<PathBuf>,
-) -> Result<()> {
+pub(super) async fn ask(command: CliCommand) -> Result<()> {
+    let CliCommand::Ask {
+        question,
+        workspace,
+        capsule_id,
+        web,
+        danger_full_access,
+        text: text_output,
+        detach,
+        socket,
+    } = command
+    else {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "question runner received a non-ask command",
+        ));
+    };
     let config = tokio::task::spawn_blocking(crate::config::LocalConfig::load).await??;
     let mut request = config.infer_question(&question, workspace)?;
     let capsule_id = match capsule_id {
@@ -69,6 +79,9 @@ pub(super) async fn ask(
         Some(socket) => select_service_capsule(&mut request, &capsule_id, socket).await?,
         None => select_capsule(&mut request, &capsule_id)?,
     };
+    if danger_full_access {
+        grant_danger_full_access(&mut request, &selected.engine.kind)?;
+    }
     if web {
         if !selected.network || !selected.tools.iter().any(|tool| tool == "web_search") {
             return Err(Error::new(
@@ -87,6 +100,22 @@ pub(super) async fn ask(
         return submit_detached(request, detached_socket).await;
     }
     Box::pin(run_attached(request, text_output)).await
+}
+
+fn grant_danger_full_access(request: &mut TaskRequest, engine_kind: &str) -> Result<()> {
+    if engine_kind != "codex-app-server" {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "--danger-full-access requires a Codex App Server capsule",
+        ));
+    }
+    "danger-full-access".clone_into(&mut request.permissions.filesystem);
+    "allow".clone_into(&mut request.permissions.network);
+    request.context.notes.push(
+        "The user explicitly granted this task unsandboxed filesystem and network access."
+            .to_owned(),
+    );
+    Ok(())
 }
 
 async fn select_service_capsule(
@@ -197,6 +226,7 @@ async fn submit_detached(request: TaskRequest, socket: Option<PathBuf>) -> Resul
         serde_json::to_string_pretty(&json!({
             "handle": handle,
             "next": {
+                "watch": ["spewer", "watch", task_id],
                 "observe": ["spewer", "observe", task_id, "--after", "0"],
                 "result": ["spewer", "result", task_id],
                 "cancel": ["spewer", "cancel", task_id]
@@ -367,5 +397,32 @@ mod display_tests {
         assert_eq!(optional(None), "not-reported");
         assert_eq!(display_cost(None, "ollama"), "local-unpriced");
         assert_eq!(display_cost(None, "codex-app-server"), "not-reported");
+    }
+}
+
+#[cfg(test)]
+mod authority_tests {
+    use super::grant_danger_full_access;
+    use crate::protocol::TaskRequest;
+
+    #[test]
+    fn danger_authority_is_codex_only() -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = include_str!("../../tests/fixtures/task-request.json");
+        let mut codex: TaskRequest = serde_json::from_str(fixture)?;
+        grant_danger_full_access(&mut codex, "codex-app-server")?;
+        assert_eq!(codex.permissions.filesystem, "danger-full-access");
+        assert_eq!(codex.permissions.network, "allow");
+        assert!(
+            codex
+                .context
+                .notes
+                .last()
+                .is_some_and(|note| { note.contains("explicitly granted") })
+        );
+
+        let mut ollama: TaskRequest = serde_json::from_str(fixture)?;
+        assert!(grant_danger_full_access(&mut ollama, "ollama").is_err());
+        assert_eq!(ollama.permissions.filesystem, "workspace-write");
+        Ok(())
     }
 }

@@ -42,6 +42,7 @@ pub(super) enum CliCommand {
         workspace: Option<PathBuf>,
         capsule_id: Option<String>,
         web: bool,
+        danger_full_access: bool,
         text: bool,
         detach: bool,
         socket: Option<PathBuf>,
@@ -89,6 +90,12 @@ pub(super) enum CliCommand {
         task_id: String,
         socket: Option<PathBuf>,
     },
+    Respond {
+        task_id: String,
+        request_id: serde_json::Value,
+        response: serde_json::Value,
+        socket: Option<PathBuf>,
+    },
     Cancel {
         task_id: String,
         reason: String,
@@ -96,6 +103,10 @@ pub(super) enum CliCommand {
     },
     Status(String),
     Tail {
+        task_id: String,
+        after: u64,
+    },
+    Watch {
         task_id: String,
         after: u64,
     },
@@ -151,12 +162,14 @@ pub(super) fn parse(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> 
             HelpTopic::Result,
             |task_id, socket| CliCommand::Result { task_id, socket },
         ),
+        Value(value) if value == "respond" => service::parse_respond(&mut parser),
         Value(value) if value == "cancel" => service::parse_cancel(&mut parser),
         Value(value) if value == "help" => parse_help(&mut parser),
         Value(value) if value == "status" => {
             parse_task_command(&mut parser, "status", HelpTopic::Status, CliCommand::Status)
         }
         Value(value) if value == "tail" => parse_tail(&mut parser),
+        Value(value) if value == "watch" => parse_watch(&mut parser),
         Value(value) if value == "rebuild" => parse_task_command(
             &mut parser,
             "rebuild",
@@ -235,23 +248,40 @@ fn parse_task_command(
 }
 
 fn parse_tail(parser: &mut lexopt::Parser) -> Result<CliCommand> {
-    let Some(task_id) = parse_identifier(parser, "tail", HelpTopic::Tail)? else {
-        return Ok(CliCommand::Help(Some(HelpTopic::Tail)));
+    parse_cursor_command(parser, "tail", HelpTopic::Tail, |task_id, after| {
+        CliCommand::Tail { task_id, after }
+    })
+}
+
+fn parse_watch(parser: &mut lexopt::Parser) -> Result<CliCommand> {
+    parse_cursor_command(parser, "watch", HelpTopic::Watch, |task_id, after| {
+        CliCommand::Watch { task_id, after }
+    })
+}
+
+fn parse_cursor_command(
+    parser: &mut lexopt::Parser,
+    command: &str,
+    topic: HelpTopic,
+    make: impl FnOnce(String, u64) -> CliCommand,
+) -> Result<CliCommand> {
+    let Some(task_id) = parse_identifier(parser, command, topic)? else {
+        return Ok(CliCommand::Help(Some(topic)));
     };
     let mut after = 0;
     while let Some(argument) = next(parser)? {
         match argument {
-            Long("help") | Short('h') => return Ok(CliCommand::Help(Some(HelpTopic::Tail))),
+            Long("help") | Short('h') => return Ok(CliCommand::Help(Some(topic))),
             Long("after") => {
                 after = value(parser)?
                     .to_string_lossy()
                     .parse::<u64>()
                     .map_err(|error| Error::new(ErrorKind::InvalidInput, error.to_string()))?;
             }
-            other => return unexpected("tail", &other),
+            other => return unexpected(command, &other),
         }
     }
-    Ok(CliCommand::Tail { task_id, after })
+    Ok(make(task_id, after))
 }
 
 fn parse_no_arguments(

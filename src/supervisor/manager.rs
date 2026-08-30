@@ -2,7 +2,7 @@
 
 use super::{Command, SupervisorConfig, SupervisorLoad, TurnWorker};
 use crate::error::{Error, ErrorKind, Result};
-use crate::protocol::TaskRequest;
+use crate::protocol::{TaskInputResponse, TaskRequest};
 use crate::store::{Database, EventInput};
 use crate::util::{after_seconds, new_id, now};
 use serde_json::json;
@@ -20,6 +20,44 @@ struct Job {
 struct WorkerCompletion {
     task_id: String,
     failed: bool,
+}
+
+struct ManagerState {
+    queue: VecDeque<Job>,
+    active: JoinSet<Result<WorkerCompletion>>,
+    active_tasks: HashMap<String, AbortHandle>,
+    active_inputs: HashMap<String, mpsc::Sender<TaskInputResponse>>,
+    accepted_tasks: u64,
+    finished_turns: u64,
+    failed_turns: u64,
+    draining: bool,
+}
+
+impl ManagerState {
+    fn new(queue: VecDeque<Job>) -> Self {
+        Self {
+            queue,
+            active: JoinSet::new(),
+            active_tasks: HashMap::new(),
+            active_inputs: HashMap::new(),
+            accepted_tasks: 0,
+            finished_turns: 0,
+            failed_turns: 0,
+            draining: false,
+        }
+    }
+
+    fn snapshot(&self, config: SupervisorConfig) -> SupervisorLoad {
+        load(
+            config,
+            &self.queue,
+            &self.active,
+            self.accepted_tasks,
+            self.finished_turns,
+            self.failed_turns,
+            self.draining,
+        )
+    }
 }
 
 pub(super) async fn run(
@@ -52,7 +90,7 @@ async fn manager_loop(
     ready: oneshot::Sender<Result<()>>,
 ) -> Result<()> {
     let startup = recover_startup(&database).await;
-    let mut queue = match startup {
+    let queue = match startup {
         Ok(queue) => {
             let _sent = ready.send(Ok(()));
             queue
@@ -64,87 +102,35 @@ async fn manager_loop(
         }
     };
     let server_epoch = new_id("srv")?;
-    let mut active = JoinSet::<Result<WorkerCompletion>>::new();
-    let mut active_tasks = HashMap::<String, AbortHandle>::new();
-    let mut accepted_tasks = 0_u64;
-    let mut finished_turns = 0_u64;
-    let mut failed_turns = 0_u64;
-    let mut draining = false;
+    let mut state = ManagerState::new(queue);
     loop {
-        dispatch(
-            &database,
-            &worker,
-            config,
-            &mut queue,
-            &mut active,
-            &mut active_tasks,
-            &server_epoch,
-        )
-        .await?;
-        if draining && queue.is_empty() && active.is_empty() {
+        dispatch(&database, &worker, config, &mut state, &server_epoch).await?;
+        if state.draining && state.queue.is_empty() && state.active.is_empty() {
             break;
         }
-        if active.is_empty() {
+        if state.active.is_empty() {
             match receiver.recv().await {
                 Some(command) => {
-                    let snapshot = load(
-                        config,
-                        &queue,
-                        &active,
-                        accepted_tasks,
-                        finished_turns,
-                        failed_turns,
-                        draining,
-                    );
-                    handle_command(
-                        command,
-                        &database,
-                        &mut queue,
-                        &mut active_tasks,
-                        &mut accepted_tasks,
-                        &mut draining,
-                        snapshot,
-                    )
-                    .await?;
+                    let snapshot = state.snapshot(config);
+                    handle_command(command, &database, &mut state, snapshot).await?;
                 }
-                None => draining = true,
+                None => state.draining = true,
             }
             continue;
         }
         tokio::select! {
-            command = receiver.recv(), if !draining => {
+            command = receiver.recv(), if !state.draining => {
                 match command {
                     Some(command) => {
-                        let snapshot = load(
-                            config,
-                            &queue,
-                            &active,
-                            accepted_tasks,
-                            finished_turns,
-                            failed_turns,
-                            draining,
-                        );
-                        handle_command(
-                            command,
-                            &database,
-                            &mut queue,
-                            &mut active_tasks,
-                            &mut accepted_tasks,
-                            &mut draining,
-                            snapshot,
-                        ).await?;
+                        let snapshot = state.snapshot(config);
+                        handle_command(command, &database, &mut state, snapshot).await?;
                     }
-                    None => draining = true,
+                    None => state.draining = true,
                 }
             }
-            joined = active.join_next() => {
+            joined = state.active.join_next() => {
                 let joined = joined.ok_or_else(|| Error::new(ErrorKind::Join, "worker set ended early"))?;
-                record_completion(
-                    joined,
-                    &mut active_tasks,
-                    &mut finished_turns,
-                    &mut failed_turns,
-                )?;
+                record_completion(joined, &mut state)?;
             }
         }
     }
@@ -153,27 +139,28 @@ async fn manager_loop(
 
 fn record_completion(
     joined: std::result::Result<Result<WorkerCompletion>, tokio::task::JoinError>,
-    active_tasks: &mut HashMap<String, AbortHandle>,
-    finished_turns: &mut u64,
-    failed_turns: &mut u64,
+    state: &mut ManagerState,
 ) -> Result<()> {
     let failed = match joined {
         Ok(Ok(completion)) => {
-            active_tasks.remove(&completion.task_id);
+            state.active_tasks.remove(&completion.task_id);
+            state.active_inputs.remove(&completion.task_id);
             completion.failed
         }
         Ok(Err(error)) => return Err(error),
         Err(error) if error.is_cancelled() => {
-            active_tasks.retain(|_, handle| !handle.is_finished());
+            state.active_tasks.retain(|_, handle| !handle.is_finished());
             false
         }
         Err(error) => return Err(error.into()),
     };
-    *finished_turns = finished_turns
+    state.finished_turns = state
+        .finished_turns
         .checked_add(1)
         .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "finished counter exhausted"))?;
     if failed {
-        *failed_turns = failed_turns
+        state.failed_turns = state
+            .failed_turns
             .checked_add(1)
             .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "failure counter exhausted"))?;
     }
@@ -183,15 +170,12 @@ fn record_completion(
 async fn handle_command(
     command: Command,
     database: &Arc<Database>,
-    queue: &mut VecDeque<Job>,
-    active_tasks: &mut HashMap<String, AbortHandle>,
-    accepted_tasks: &mut u64,
-    draining: &mut bool,
+    state: &mut ManagerState,
     snapshot: SupervisorLoad,
 ) -> Result<()> {
     match command {
         Command::Submit { mut request, reply } => {
-            if *draining {
+            if state.draining {
                 let _sent = reply.send(Err(Error::new(
                     ErrorKind::InvalidInput,
                     "supervisor is draining",
@@ -210,11 +194,11 @@ async fn handle_command(
                 .accept((*request).clone(), task_id.clone(), now()?)
                 .await?;
             if accepted.created {
-                queue.push_back(Job {
+                state.queue.push_back(Job {
                     request: *request,
                     task_id,
                 });
-                *accepted_tasks = accepted_tasks.checked_add(1).ok_or_else(|| {
+                state.accepted_tasks = state.accepted_tasks.checked_add(1).ok_or_else(|| {
                     Error::new(ErrorKind::InvalidInput, "accepted counter exhausted")
                 })?;
             }
@@ -238,13 +222,22 @@ async fn handle_command(
             reason,
             reply,
         } => {
-            if let Some(position) = queue.iter().position(|job| job.task_id == task_id) {
-                queue.remove(position);
+            if let Some(position) = state.queue.iter().position(|job| job.task_id == task_id) {
+                state.queue.remove(position);
             }
-            if let Some(worker) = active_tasks.remove(&task_id) {
+            if let Some(worker) = state.active_tasks.remove(&task_id) {
+                state.active_inputs.remove(&task_id);
                 worker.abort();
             }
             let _sent = reply.send(database.cancel(task_id, reason).await);
+        }
+        Command::Respond {
+            task_id,
+            response,
+            reply,
+        } => {
+            let result = respond(database, &state.active_inputs, task_id, response).await;
+            let _sent = reply.send(result);
         }
         Command::Acknowledge {
             message_id,
@@ -253,7 +246,7 @@ async fn handle_command(
         } => {
             let _sent = reply.send(database.acknowledge(message_id, consumer_id).await);
         }
-        Command::Shutdown => *draining = true,
+        Command::Shutdown => state.draining = true,
     }
     Ok(())
 }
@@ -262,13 +255,11 @@ async fn dispatch(
     database: &Arc<Database>,
     worker: &Arc<dyn TurnWorker>,
     config: SupervisorConfig,
-    queue: &mut VecDeque<Job>,
-    active: &mut JoinSet<Result<WorkerCompletion>>,
-    active_tasks: &mut HashMap<String, AbortHandle>,
+    state: &mut ManagerState,
     server_epoch: &str,
 ) -> Result<()> {
-    while active.len() < config.max_workers {
-        let Some(job) = queue.pop_front() else {
+    while state.active.len() < config.max_workers {
+        let Some(job) = state.queue.pop_front() else {
             break;
         };
         let projection = database
@@ -290,16 +281,19 @@ async fn dispatch(
             }, lease_id.clone(), server_epoch.to_owned(), worker_id, after_seconds(lease_seconds)?)
             .await?;
         let task_id = job.task_id.clone();
+        let input_task_id = task_id.clone();
         let worker_task_id = task_id.clone();
+        let (input_tx, input_rx) = mpsc::channel(1);
         let database = database.clone();
         let worker = worker.clone();
-        let abort = active.spawn(async move {
+        let abort = state.active.spawn(async move {
             match worker
                 .run(
                     job.request.clone(),
                     job.task_id.clone(),
                     lease_id,
                     database.clone(),
+                    input_rx,
                 )
                 .await
             {
@@ -345,9 +339,52 @@ async fn dispatch(
                 }
             }
         });
-        active_tasks.insert(task_id, abort);
+        state.active_tasks.insert(task_id, abort);
+        state.active_inputs.insert(input_task_id, input_tx);
     }
     Ok(())
+}
+
+async fn respond(
+    database: &Arc<Database>,
+    active_inputs: &HashMap<String, mpsc::Sender<TaskInputResponse>>,
+    task_id: String,
+    response: TaskInputResponse,
+) -> Result<crate::reducer::Projection> {
+    let sender = active_inputs.get(&task_id).cloned().ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            "task has no active worker waiting for input",
+        )
+    })?;
+    let projection = database
+        .get(task_id.clone())
+        .await?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "task does not exist"))?;
+    let pending = projection
+        .pending_input
+        .as_ref()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "task is not waiting for input"))?;
+    super::input::validate(pending, &response)?;
+    let outcome = database
+        .append(EventInput {
+            task_id,
+            attempt: projection.attempt,
+            kind: "input.resolved".to_owned(),
+            data: json!({
+                "request_id": response.request_id.clone(),
+                "response": response.response.clone()
+            }),
+            source: None,
+            source_key: None,
+            observed_at: now()?,
+        })
+        .await?;
+    sender
+        .send(response)
+        .await
+        .map_err(|_| Error::new(ErrorKind::ChannelClosed, "input worker closed"))?;
+    Ok(outcome.projection)
 }
 
 async fn recover_startup(database: &Arc<Database>) -> Result<VecDeque<Job>> {
